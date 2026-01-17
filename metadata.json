@@ -1,0 +1,7 @@
+{
+  "name": "Consultor de Beleza - Rota Ágil",
+  "description": "App para vendedores externos de cosméticos com gestão de clientes, rotas inteligentes e importação de contatos.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
