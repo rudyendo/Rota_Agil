@@ -11,7 +11,9 @@ import {
   Loader2,
   Trash2,
   FileText,
-  Save
+  Save,
+  Key,
+  AlertTriangle
 } from 'lucide-react';
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
@@ -151,9 +153,20 @@ const App: React.FC = () => {
     });
   };
 
+  const checkAndEnsureKey = async () => {
+    if (!process.env.API_KEY) {
+      const hasKey = await (window as any).aistudio?.hasSelectedApiKey();
+      if (!hasKey) {
+        alert("Chave de API não configurada no Vercel. Por favor, selecione uma chave manual para continuar.");
+        await (window as any).aistudio?.openSelectKey();
+      }
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    await checkAndEnsureKey();
     setIsProcessing(true);
     setImportStatus('IA lendo arquivo...');
     try {
@@ -166,7 +179,8 @@ const App: React.FC = () => {
             processExtractedData(data);
             setIsImportModalOpen(false);
           } catch (err) {
-            alert('Não foi possível extrair dados deste arquivo.');
+            console.error(err);
+            alert('Falha na IA. Verifique se a API_KEY foi configurada no painel do Vercel.');
           }
         }
         setIsProcessing(false);
@@ -179,15 +193,16 @@ const App: React.FC = () => {
 
   const handleTextImport = async () => {
     if (!importText.trim()) return;
+    await checkAndEnsureKey();
     setIsProcessing(true);
-    setImportStatus('Processando texto...');
+    setImportStatus('IA Processando...');
     try {
       const data = await parseRawTextToCustomers(importText);
       processExtractedData(data);
       setIsImportModalOpen(false);
       setImportText('');
     } catch (error) {
-      alert('Erro ao processar texto.');
+      alert('Erro na API de Inteligência Artificial.');
     } finally {
       setIsProcessing(false);
     }
@@ -203,32 +218,28 @@ const App: React.FC = () => {
         (position) => {
           resolve(`${position.coords.latitude},${position.coords.longitude}`);
         },
-        () => {
-          resolve(""); 
-        },
-        { timeout: 8000, enableHighAccuracy: true } // Tempo extra para alta precisão
+        () => resolve(""),
+        { timeout: 10000, enableHighAccuracy: true }
       );
     });
   };
 
   const handleOptimize = async () => {
     if (selectedIds.size === 0) return;
+    await checkAndEnsureKey();
     setIsOptimizing(true);
-    setOptimizationStatus('Localizando...');
+    setOptimizationStatus('GPS Localizando...');
     
     try {
       const currentPos = await getCurrentLocation();
-      
-      setOptimizationStatus('Menor Percurso...');
+      setOptimizationStatus('IA Otimizando Menor Percurso...');
       
       const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
       const addressStrings = selectedCustomers.map(c => 
-        `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}${c.city ? `, ${c.city}` : ''}`
+        `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}, ${c.state || ''}`
       );
       
       const addressesToOptimize = currentPos ? [currentPos, ...addressStrings] : addressStrings;
-      
-      // Chama o Gemini 3 Pro com o prompt ultra-específico de menor percurso
       const orderedAddresses = await optimizeRouteOrder(addressesToOptimize);
       
       const routePath = orderedAddresses
@@ -238,7 +249,7 @@ const App: React.FC = () => {
       window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
       console.error(error);
-      alert('Erro ao otimizar. Verifique o sinal do GPS.');
+      alert('A IA não conseguiu responder. Verifique a configuração da API_KEY no Vercel.');
     } finally {
       setIsOptimizing(false);
       setOptimizationStatus('');
@@ -246,7 +257,7 @@ const App: React.FC = () => {
   };
 
   const clearAllData = () => {
-    if (confirm('Atenção! Isso apagará todos os dados salvos no seu celular. Deseja continuar?')) {
+    if (confirm('Apagar todos os dados permanentemente?')) {
       setCustomers([]);
       localStorage.removeItem('cosmo_customers');
       setSelectedIds(new Set());
@@ -255,29 +266,42 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto shadow-xl relative overflow-x-hidden">
+      {/* Alerta de Chave Faltando (Apenas se não houver no ambiente) */}
+      {!process.env.API_KEY && (
+        <div className="bg-amber-50 border-b border-amber-100 p-2 flex items-center justify-center gap-2 text-[10px] text-amber-700 font-bold uppercase tracking-tight">
+          <AlertTriangle className="w-3 h-3" />
+          Configuração de API pendente no Vercel
+        </div>
+      )}
+
       {/* Header Fixo */}
       <header className="bg-white border-b sticky top-0 z-30 px-4 py-4 flex flex-col gap-3">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <div className="bg-pink-600 p-2 rounded-xl text-white shadow-lg shadow-pink-100">
+            <div className="bg-pink-600 p-2 rounded-xl text-white shadow-lg">
               <Navigation className="w-5 h-5" />
             </div>
             <div>
               <h1 className="font-bold text-slate-900 leading-none">Rota Ágil</h1>
-              <p className="text-[10px] text-pink-600 font-bold uppercase tracking-wider mt-1">Cosméticos</p>
+              <p className="text-[10px] text-pink-600 font-bold uppercase mt-1">Inteligência Logística</p>
             </div>
           </div>
-          <button onClick={clearAllData} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-            <Trash2 className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => (window as any).aistudio?.openSelectKey()} title="Configurar Chave" className="p-2 text-slate-400 hover:text-blue-500">
+              <Key className="w-4 h-4" />
+            </button>
+            <button onClick={clearAllData} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
           <input 
             type="text" 
-            placeholder="Buscar por nome, endereço ou bairro..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm transition-all shadow-inner"
+            placeholder="Buscar clientes ou bairros..."
+            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -288,7 +312,7 @@ const App: React.FC = () => {
       <main className="flex-1 p-4 pb-32 overflow-y-auto no-scrollbar">
         <div className="mb-4 px-1 flex justify-between items-center">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes`}
+            {selectedIds.size > 0 ? `${selectedIds.size} selecionados para rota` : `${filteredCustomers.length} clientes na base`}
           </span>
           {selectedIds.size > 0 && (
             <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full">Limpar</button>
@@ -306,20 +330,11 @@ const App: React.FC = () => {
             />
           ))}
         </div>
-
-        {filteredCustomers.length === 0 && (
-          <div className="text-center py-20">
-            <div className="bg-white w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 shadow-sm">
-              <Users className="w-10 h-10 text-slate-200" />
-            </div>
-            <p className="text-slate-400 font-medium text-sm">Nenhum cliente encontrado.</p>
-          </div>
-        )}
       </main>
 
-      {/* Barra de Ações Inferior Fixa */}
+      {/* Barra de Ações Inferior */}
       <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">
-        <div className="bg-white border border-slate-100 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.15)] rounded-[2rem] p-3 flex items-center gap-3">
+        <div className="bg-white border border-slate-100 shadow-2xl rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
             <button 
               onClick={handleOptimize}
@@ -329,25 +344,19 @@ const App: React.FC = () => {
               {isOptimizing ? (
                 <div className="flex items-center gap-3">
                   <Loader2 className="w-5 h-5 animate-spin text-pink-500" />
-                  <span className="text-xs uppercase tracking-[0.2em] font-black">{optimizationStatus}</span>
+                  <span className="text-xs uppercase font-black">{optimizationStatus}</span>
                 </div>
               ) : (
-                <><Navigation className="w-5 h-5 text-pink-500" /><span>CALCULAR MENOR ROTA</span></>
+                <><Navigation className="w-5 h-5 text-pink-500" /><span>GERAR MENOR PERCURSO</span></>
               )}
             </button>
           ) : (
             <>
-              <button 
-                onClick={() => setIsImportModalOpen(true)}
-                className="flex-1 h-14 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all"
-              >
+              <button onClick={() => setIsImportModalOpen(true)} className="flex-1 h-14 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all">
                 <Upload className="w-5 h-5" />
                 <span>Importar</span>
               </button>
-              <button 
-                onClick={handleOpenNewManual}
-                className="flex-[1.5] h-14 bg-pink-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-pink-200"
-              >
+              <button onClick={handleOpenNewManual} className="flex-[1.5] h-14 bg-pink-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-pink-200">
                 <Plus className="w-6 h-6" />
                 <span>Novo Cliente</span>
               </button>
@@ -366,33 +375,17 @@ const App: React.FC = () => {
             </div>
             
             <div className="space-y-6">
-              <div 
-                onClick={() => !isProcessing && fileInputRef.current?.click()}
-                className={`border-2 border-dashed ${isProcessing ? 'border-slate-100 bg-slate-50' : 'border-slate-200 hover:border-pink-500'} rounded-[2rem] p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all active:scale-95`}
-              >
+              <div onClick={() => !isProcessing && fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-slate-100 bg-slate-50' : 'border-slate-200 hover:border-pink-500'} rounded-[2rem] p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all active:scale-95`}>
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*,.pdf" onChange={handleFileUpload} disabled={isProcessing} />
                 <div className={`p-4 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
                   {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
                 </div>
-                <div className="text-center">
-                  <p className="font-bold text-slate-700">{isProcessing ? importStatus : 'Extrair do Arquivo'}</p>
-                  <p className="text-xs text-slate-400 mt-1">PDF ou Foto de Planilha</p>
-                </div>
+                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Extrair de Foto ou PDF'}</p>
               </div>
 
               <div className="space-y-3">
-                <textarea 
-                  className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium"
-                  placeholder="Ou cole os dados brutos aqui..."
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  disabled={isProcessing}
-                />
-                <button 
-                  onClick={handleTextImport}
-                  disabled={isProcessing || !importText.trim()}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30 active:scale-95 transition-transform"
-                >
+                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium" placeholder="Ou cole a lista de nomes e endereços..." value={importText} onChange={(e) => setImportText(e.target.value)} disabled={isProcessing} />
+                <button onClick={handleTextImport} disabled={isProcessing || !importText.trim()} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30">
                   {isProcessing ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'PROCESSAR TEXTO'}
                 </button>
               </div>
@@ -412,32 +405,28 @@ const App: React.FC = () => {
             
             <div className="space-y-4 overflow-y-auto pr-1 no-scrollbar pb-6">
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
-                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" placeholder="Ex: Maria Oliveira" value={editingCustomer.name || ''} onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})} />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome</label>
+                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.name || ''} onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})} />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Endereço</label>
-                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" placeholder="Rua, número" value={editingCustomer.address || ''} onChange={e => setEditingCustomer({...editingCustomer, address: e.target.value})} />
+                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.address || ''} onChange={e => setEditingCustomer({...editingCustomer, address: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bairro</label>
-                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" placeholder="Bairro" value={editingCustomer.neighborhood || ''} onChange={e => setEditingCustomer({...editingCustomer, neighborhood: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.neighborhood || ''} onChange={e => setEditingCustomer({...editingCustomer, neighborhood: e.target.value})} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cidade</label>
-                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" placeholder="Cidade" value={editingCustomer.city || ''} onChange={e => setEditingCustomer({...editingCustomer, city: e.target.value})} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone</label>
+                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.phone?.[0] || ''} onChange={e => setEditingCustomer({...editingCustomer, phone: [e.target.value]})} />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone</label>
-                <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" placeholder="(00) 00000-0000" value={editingCustomer.phone?.[0] || ''} onChange={e => setEditingCustomer({...editingCustomer, phone: [e.target.value]})} />
               </div>
             </div>
 
             <button type="submit" className="w-full py-5 bg-pink-600 text-white rounded-[1.5rem] font-black flex items-center justify-center gap-3 active:bg-pink-700 shadow-xl shadow-pink-100 transition-all">
               <Save className="w-5 h-5" />
-              <span>SALVAR CADASTRO</span>
+              <span>SALVAR CLIENTE</span>
             </button>
           </form>
         </div>
