@@ -20,10 +20,10 @@ const customerSchema = {
 
 /**
  * Inicializa o cliente AI.
- * No Vercel, a API_KEY deve ser configurada nas Environment Variables do projeto.
+ * Utiliza GOOGLE_GENERATIVE_AI_API_KEY conforme solicitado.
  */
 const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
     throw new Error("API_KEY_MISSING");
   }

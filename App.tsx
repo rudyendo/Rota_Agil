@@ -157,7 +157,7 @@ const App: React.FC = () => {
     console.error("Erro na API:", error);
     
     if (error.message === "API_KEY_MISSING") {
-      alert("Chave de API não encontrada. Se você configurou no Vercel, lembre-se de fazer um REDEPLOY do seu projeto.");
+      alert("Chave de API (GOOGLE_GENERATIVE_AI_API_KEY) não encontrada. Verifique no Vercel e faça um Redeploy.");
       if ((window as any).aistudio) {
         await (window as any).aistudio.openSelectKey();
       }
@@ -165,17 +165,17 @@ const App: React.FC = () => {
     }
 
     if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not valid")) {
-      alert("A chave de API parece inválida ou não tem permissão para este modelo.");
+      alert("Chave de API inválida. Use o ícone de chave no topo para configurar manualmente.");
       if ((window as any).aistudio) {
         await (window as any).aistudio.openSelectKey();
       }
     } else {
-      alert(`Erro: ${error.message || "Falha na comunicação com a IA. Tente novamente."}`);
+      alert(`Erro: ${error.message || "Falha na comunicação com a IA."}`);
     }
   };
 
   const checkAndEnsureKey = async () => {
-    if (!process.env.API_KEY && (window as any).aistudio) {
+    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && (window as any).aistudio) {
       const hasKey = await (window as any).aistudio.hasSelectedApiKey();
       if (!hasKey) {
         await (window as any).aistudio.openSelectKey();
@@ -301,7 +301,7 @@ const App: React.FC = () => {
             <button 
               onClick={() => (window as any).aistudio?.openSelectKey()} 
               title="Configurar Chave" 
-              className={`p-2 transition-colors ${!process.env.API_KEY ? 'text-amber-500 animate-pulse' : 'text-slate-400 hover:text-blue-500'}`}
+              className={`p-2 transition-colors ${!process.env.GOOGLE_GENERATIVE_AI_API_KEY ? 'text-amber-500 animate-pulse' : 'text-slate-400 hover:text-blue-500'}`}
             >
               <Key className="w-4 h-4" />
             </button>
