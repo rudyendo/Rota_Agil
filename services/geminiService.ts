@@ -19,79 +19,65 @@ const customerSchema = {
 };
 
 /**
- * Inicializa o cliente AI.
- * Utiliza GOOGLE_GENERATIVE_AI_API_KEY conforme solicitado.
+ * Inicializa o cliente AI usando a variável de ambiente padrão process.env.API_KEY.
+ * Esta é a única forma suportada para injeção automática de chaves nesta plataforma.
  */
 const getAiClient = () => {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API_KEY_MISSING");
+    throw new Error("API_KEY_NOT_FOUND");
   }
   return new GoogleGenAI({ apiKey });
 };
 
 export const parseFileToCustomers = async (base64Data: string, mimeType: string) => {
-  try {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
-        parts: [
-          { inlineData: { data: base64Data, mimeType } },
-          { text: "Extraia todos os clientes desta imagem/documento para JSON. Inclua nome, endereço, bairro e telefone se disponíveis." }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: customerSchema,
-      },
-    });
-    return JSON.parse(response.text || "[]");
-  } catch (error: any) {
-    throw error;
-  }
+  const ai = getAiClient();
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: {
+      parts: [
+        { inlineData: { data: base64Data, mimeType } },
+        { text: "Extraia todos os clientes desta imagem/documento para JSON. Nome, endereço, bairro e telefone." }
+      ]
+    },
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: customerSchema,
+    },
+  });
+  return JSON.parse(response.text || "[]");
 };
 
 export const parseRawTextToCustomers = async (text: string) => {
-  try {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Transforme o seguinte texto em uma lista de clientes JSON: ${text}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: customerSchema,
-      },
-    });
-    return JSON.parse(response.text || "[]");
-  } catch (error: any) {
-    throw error;
-  }
+  const ai = getAiClient();
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Transforme o seguinte texto em uma lista de clientes JSON: ${text}`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: customerSchema,
+    },
+  });
+  return JSON.parse(response.text || "[]");
 };
 
 export const optimizeRouteOrder = async (addresses: string[]) => {
-  try {
-    const ai = getAiClient();
+  const ai = getAiClient();
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `GPS Inteligente: Reordene esta lista para o menor percurso geral. 
+    O primeiro endereço é a MINHA LOCALIZAÇÃO ATUAL (ORIGEM).
+    Retorne apenas os endereços ordenados em formato JSON.
     
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Você é um GPS inteligente. Reordene estes endereços para o MENOR caminho possível.
-      O primeiro endereço é onde eu estou agora (ORIGEM).
-      Retorne apenas a lista de endereços em ordem, um por linha.
-      
-      ENDEREÇOS:
-      ${addresses.join('\n')}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        }
-      },
-    });
-    
-    return JSON.parse(response.text || "[]");
-  } catch (error: any) {
-    throw error;
-  }
+    ENDEREÇOS:
+    ${addresses.join('\n')}`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING }
+      }
+    },
+  });
+  return JSON.parse(response.text || "[]");
 };

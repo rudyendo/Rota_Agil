@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Users, 
-  Map as MapIcon, 
   Plus, 
   Search, 
   Upload, 
@@ -11,9 +10,7 @@ import {
   Loader2,
   Trash2,
   FileText,
-  Save,
-  Key,
-  AlertCircle
+  Save
 } from 'lucide-react';
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
@@ -153,40 +150,18 @@ const App: React.FC = () => {
     });
   };
 
-  const handleError = async (error: any) => {
-    console.error("Erro na API:", error);
-    
-    if (error.message === "API_KEY_MISSING") {
-      alert("Chave de API (GOOGLE_GENERATIVE_AI_API_KEY) não encontrada. Verifique no Vercel e faça um Redeploy.");
-      if ((window as any).aistudio) {
-        await (window as any).aistudio.openSelectKey();
-      }
-      return;
-    }
-
-    if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not valid")) {
-      alert("Chave de API inválida. Use o ícone de chave no topo para configurar manualmente.");
-      if ((window as any).aistudio) {
-        await (window as any).aistudio.openSelectKey();
-      }
+  const handleError = (error: any) => {
+    console.error("Erro na aplicação:", error);
+    if (error.message === "API_KEY_NOT_FOUND") {
+      alert("A variável de ambiente API_KEY não foi encontrada. Verifique as configurações no Vercel.");
     } else {
-      alert(`Erro: ${error.message || "Falha na comunicação com a IA."}`);
-    }
-  };
-
-  const checkAndEnsureKey = async () => {
-    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && (window as any).aistudio) {
-      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        await (window as any).aistudio.openSelectKey();
-      }
+      alert("Houve um erro na comunicação com a IA. Certifique-se de que sua chave de API é válida e está ativa.");
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    await checkAndEnsureKey();
     setIsProcessing(true);
     setImportStatus('IA lendo arquivo...');
     try {
@@ -213,7 +188,6 @@ const App: React.FC = () => {
 
   const handleTextImport = async () => {
     if (!importText.trim()) return;
-    await checkAndEnsureKey();
     setIsProcessing(true);
     setImportStatus('IA Processando...');
     try {
@@ -246,26 +220,20 @@ const App: React.FC = () => {
 
   const handleOptimize = async () => {
     if (selectedIds.size === 0) return;
-    await checkAndEnsureKey();
     setIsOptimizing(true);
     setOptimizationStatus('GPS Localizando...');
-    
     try {
       const currentPos = await getCurrentLocation();
-      setOptimizationStatus('IA Otimizando Rota...');
-      
+      setOptimizationStatus('IA Otimizando...');
       const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
       const addressStrings = selectedCustomers.map(c => 
         `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`
       );
-      
       const addressesToOptimize = currentPos ? [currentPos, ...addressStrings] : addressStrings;
       const orderedAddresses = await optimizeRouteOrder(addressesToOptimize);
-      
       const routePath = orderedAddresses
         .map(addr => encodeURIComponent(addr.trim()))
         .join('/');
-      
       window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
       handleError(error);
@@ -285,7 +253,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto shadow-xl relative overflow-x-hidden">
-      {/* Header Fixo */}
       <header className="bg-white border-b sticky top-0 z-30 px-4 py-4 flex flex-col gap-3">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -297,18 +264,9 @@ const App: React.FC = () => {
               <p className="text-[10px] text-pink-600 font-bold uppercase mt-1">Vendas Externas</p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button 
-              onClick={() => (window as any).aistudio?.openSelectKey()} 
-              title="Configurar Chave" 
-              className={`p-2 transition-colors ${!process.env.GOOGLE_GENERATIVE_AI_API_KEY ? 'text-amber-500 animate-pulse' : 'text-slate-400 hover:text-blue-500'}`}
-            >
-              <Key className="w-4 h-4" />
-            </button>
-            <button onClick={clearAllData} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-              <Trash2 className="w-5 h-5" />
-            </button>
-          </div>
+          <button onClick={clearAllData} title="Limpar Tudo" className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+            <Trash2 className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="relative">
@@ -323,14 +281,13 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Lista de Clientes */}
       <main className="flex-1 p-4 pb-32 overflow-y-auto no-scrollbar">
         <div className="mb-4 px-1 flex justify-between items-center">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes`}
+            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes cadastrados`}
           </span>
           {selectedIds.size > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Limpar Seleção</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Desmarcar Todos</button>
           )}
         </div>
 
@@ -354,7 +311,6 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Rodapé de Ações */}
       <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">
         <div className="bg-white border border-slate-100 shadow-2xl rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
@@ -387,9 +343,8 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal: Importação */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-20">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">Importar</h2>
@@ -402,7 +357,7 @@ const App: React.FC = () => {
                 <div className={`p-4 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
                   {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
                 </div>
-                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto ou PDF de Lista'}</p>
+                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto ou PDF da Lista'}</p>
               </div>
 
               <div className="space-y-3">
@@ -416,7 +371,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Cadastro Manual */}
       {isManualModalOpen && editingCustomer && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
           <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-20">
