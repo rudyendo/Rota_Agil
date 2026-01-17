@@ -15,7 +15,7 @@ import {
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
 import CustomerCard from './components/CustomerCard';
-import { parseFileToCustomers, parseRawTextToCustomers, optimizeRouteOrder } from './services/geminiService';
+import { parseFileToCustomers, parseRawTextToCustomers } from './services/geminiService';
 
 const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -27,8 +27,8 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
   const [importText, setImportText] = useState('');
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const [optimizationStatus, setOptimizationStatus] = useState<string>('');
+  const [isPreparingRoute, setIsPreparingRoute] = useState(false);
+  const [routeStatus, setRouteStatus] = useState<string>('');
   
   const [editingCustomer, setEditingCustomer] = useState<Partial<Customer> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +155,7 @@ const App: React.FC = () => {
     if (error.message === "API_KEY_NOT_FOUND") {
       alert("A variável de ambiente API_KEY não foi encontrada. Verifique as configurações no Vercel.");
     } else {
-      alert("Houve um erro na comunicação com a IA. Certifique-se de que sua chave de API é válida e está ativa.");
+      alert("Houve um erro na comunicação com a IA para importação de dados.");
     }
   };
 
@@ -218,28 +218,30 @@ const App: React.FC = () => {
     });
   };
 
-  const handleOptimize = async () => {
+  const handleViewOnMap = async () => {
     if (selectedIds.size === 0) return;
-    setIsOptimizing(true);
-    setOptimizationStatus('GPS Localizando...');
+    setIsPreparingRoute(true);
+    setRouteStatus('GPS Localizando...');
     try {
       const currentPos = await getCurrentLocation();
-      setOptimizationStatus('IA Otimizando...');
       const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
       const addressStrings = selectedCustomers.map(c => 
         `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`
       );
-      const addressesToOptimize = currentPos ? [currentPos, ...addressStrings] : addressStrings;
-      const orderedAddresses = await optimizeRouteOrder(addressesToOptimize);
-      const routePath = orderedAddresses
+      
+      // Monta a rota diretamente sem processamento de IA
+      const allPoints = currentPos ? [currentPos, ...addressStrings] : addressStrings;
+      const routePath = allPoints
         .map(addr => encodeURIComponent(addr.trim()))
         .join('/');
+      
       window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
-      handleError(error);
+      console.error(error);
+      alert("Não foi possível gerar a rota no mapa.");
     } finally {
-      setIsOptimizing(false);
-      setOptimizationStatus('');
+      setIsPreparingRoute(false);
+      setRouteStatus('');
     }
   };
 
@@ -315,17 +317,17 @@ const App: React.FC = () => {
         <div className="bg-white border border-slate-100 shadow-2xl rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
             <button 
-              onClick={handleOptimize}
-              disabled={isOptimizing}
+              onClick={handleViewOnMap}
+              disabled={isPreparingRoute}
               className="w-full h-14 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
             >
-              {isOptimizing ? (
+              {isPreparingRoute ? (
                 <div className="flex items-center gap-3">
                   <Loader2 className="w-5 h-5 animate-spin text-pink-500" />
-                  <span className="text-xs uppercase font-black">{optimizationStatus}</span>
+                  <span className="text-xs uppercase font-black">{routeStatus}</span>
                 </div>
               ) : (
-                <><Navigation className="w-5 h-5 text-pink-500" /><span>OTIMIZAR NO MAPA</span></>
+                <><Navigation className="w-5 h-5 text-pink-500" /><span>VER NO MAPA</span></>
               )}
             </button>
           ) : (

@@ -60,24 +60,3 @@ export const parseRawTextToCustomers = async (text: string) => {
   });
   return JSON.parse(response.text || "[]");
 };
-
-export const optimizeRouteOrder = async (addresses: string[]) => {
-  const ai = getAiClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `GPS Inteligente: Reordene esta lista para o menor percurso geral. 
-    O primeiro endereço é a MINHA LOCALIZAÇÃO ATUAL (ORIGEM).
-    Retorne apenas os endereços ordenados em formato JSON.
-    
-    ENDEREÇOS:
-    ${addresses.join('\n')}`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING }
-      }
-    },
-  });
-  return JSON.parse(response.text || "[]");
-};
