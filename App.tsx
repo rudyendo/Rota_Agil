@@ -11,8 +11,7 @@ import {
   Loader2,
   Trash2,
   FileText,
-  Save,
-  UserPlus
+  Save
 } from 'lucide-react';
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
@@ -39,7 +38,7 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.length > 0) {
+        if (parsed && parsed.length > 0) {
           setCustomers(parsed);
           return;
         }
@@ -155,20 +154,18 @@ const App: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
-    setImportStatus('Lendo arquivo...');
+    setImportStatus('IA lendo arquivo...');
     try {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64 = event.target?.result?.toString().split(',')[1];
         if (base64) {
-          setImportStatus('IA extraindo...');
           try {
             const data = await parseFileToCustomers(base64, file.type);
             processExtractedData(data);
             setIsImportModalOpen(false);
           } catch (err) {
-            console.error(err);
-            setImportStatus('Erro na extração.');
+            alert('Não foi possível extrair dados deste arquivo.');
           }
         }
         setIsProcessing(false);
@@ -189,7 +186,7 @@ const App: React.FC = () => {
       setIsImportModalOpen(false);
       setImportText('');
     } catch (error) {
-      setImportStatus('Erro no processamento.');
+      alert('Erro ao processar texto.');
     } finally {
       setIsProcessing(false);
     }
@@ -199,13 +196,13 @@ const App: React.FC = () => {
     if (selectedIds.size === 0) return;
     setIsOptimizing(true);
     const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
-    const addresses = selectedCustomers.map(c => `${c.address}, ${c.neighborhood}, ${c.city}`);
+    const addresses = selectedCustomers.map(c => `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`);
     try {
       const orderedAddresses = await optimizeRouteOrder(addresses);
       const query = orderedAddresses.join(' / ');
       window.open(`https://www.google.com/maps/dir/${encodeURIComponent(query)}`, '_blank');
     } catch (error) {
-      console.error(error);
+      alert('Não foi possível otimizar no momento.');
     } finally {
       setIsOptimizing(false);
     }
@@ -215,6 +212,7 @@ const App: React.FC = () => {
     if (confirm('Atenção! Isso apagará todos os dados salvos no seu celular. Deseja continuar?')) {
       setCustomers([]);
       localStorage.removeItem('cosmo_customers');
+      setSelectedIds(new Set());
     }
   };
 
@@ -242,7 +240,7 @@ const App: React.FC = () => {
           <input 
             type="text" 
             placeholder="Buscar por nome, endereço ou bairro..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm transition-all"
+            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm transition-all shadow-inner"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -250,13 +248,13 @@ const App: React.FC = () => {
       </header>
 
       {/* Lista de Clientes */}
-      <main className="flex-1 p-4 pb-32">
+      <main className="flex-1 p-4 pb-32 overflow-y-auto no-scrollbar">
         <div className="mb-4 px-1 flex justify-between items-center">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
             {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes`}
           </span>
           {selectedIds.size > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full">Limpar Seleção</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full">Limpar</button>
           )}
         </div>
 
@@ -282,11 +280,10 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Barra de Ações Inferior (Bottom Bar) */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto">
-        <div className="bg-white border shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] rounded-[2rem] p-3 flex items-center gap-3">
+      {/* Barra de Ações Inferior Fixa */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">
+        <div className="bg-white border border-slate-100 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.15)] rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
-            /* Layout quando há seleção */
             <button 
               onClick={handleOptimize}
               disabled={isOptimizing}
@@ -295,7 +292,6 @@ const App: React.FC = () => {
               {isOptimizing ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Navigation className="w-5 h-5 text-pink-500" /><span>OTIMIZAR ROTA</span></>}
             </button>
           ) : (
-            /* Layout Normal - Cadastro e Importação */
             <>
               <button 
                 onClick={() => setIsImportModalOpen(true)}
@@ -306,7 +302,7 @@ const App: React.FC = () => {
               </button>
               <button 
                 onClick={handleOpenNewManual}
-                className="flex-[1.5] h-14 bg-pink-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-pink-100"
+                className="flex-[1.5] h-14 bg-pink-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-pink-200"
               >
                 <Plus className="w-6 h-6" />
                 <span>Novo Cliente</span>
@@ -316,10 +312,10 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal: Importação */}
+      {/* Modais... */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-20 duration-300">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-20">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">Importar</h2>
               {!isProcessing && <X className="w-6 h-6 text-slate-300 cursor-pointer" onClick={() => setIsImportModalOpen(false)} />}
@@ -328,22 +324,22 @@ const App: React.FC = () => {
             <div className="space-y-6">
               <div 
                 onClick={() => !isProcessing && fileInputRef.current?.click()}
-                className={`border-2 border-dashed ${isProcessing ? 'border-slate-100 bg-slate-50' : 'border-slate-200 hover:border-pink-500'} rounded-[2rem] p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all`}
+                className={`border-2 border-dashed ${isProcessing ? 'border-slate-100 bg-slate-50' : 'border-slate-200 hover:border-pink-500'} rounded-[2rem] p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all active:scale-95`}
               >
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*,.pdf" onChange={handleFileUpload} disabled={isProcessing} />
                 <div className={`p-4 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
                   {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
                 </div>
                 <div className="text-center">
-                  <p className="font-bold text-slate-700">{isProcessing ? importStatus : 'Escolher Arquivo'}</p>
+                  <p className="font-bold text-slate-700">{isProcessing ? importStatus : 'Extrair do Arquivo'}</p>
                   <p className="text-xs text-slate-400 mt-1">PDF ou Foto de Planilha</p>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <textarea 
-                  className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none"
-                  placeholder="Ou cole os dados aqui..."
+                  className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium"
+                  placeholder="Ou cole os dados brutos aqui..."
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
                   disabled={isProcessing}
@@ -351,7 +347,7 @@ const App: React.FC = () => {
                 <button 
                   onClick={handleTextImport}
                   disabled={isProcessing || !importText.trim()}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30"
+                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30 active:scale-95 transition-transform"
                 >
                   {isProcessing ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'PROCESSAR TEXTO'}
                 </button>
@@ -361,10 +357,9 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Cadastro/Edição Manual */}
       {isManualModalOpen && editingCustomer && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4">
-          <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-20 duration-300">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-20">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">{editingCustomer.id ? 'Editar' : 'Novo Cliente'}</h2>
               <X className="w-6 h-6 text-slate-300 cursor-pointer" onClick={() => setIsManualModalOpen(false)} />

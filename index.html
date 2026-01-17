@@ -21,19 +21,25 @@
             scrollbar-width: none;
         }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
-  }
-}
-</script>
+    <!-- Script preventivo para evitar ReferenceError: process is not defined -->
+    <script>
+      window.process = { env: {} };
+    </script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "react": "https://esm.sh/react@^19.2.3",
+        "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+        "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+      }
+    }
+    </script>
 </head>
 <body class="bg-slate-50 text-slate-900 overflow-x-hidden">
     <div id="root"></div>
+    <!-- Ponto de entrada da aplicação -->
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
