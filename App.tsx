@@ -195,14 +195,32 @@ const App: React.FC = () => {
   const handleOptimize = async () => {
     if (selectedIds.size === 0) return;
     setIsOptimizing(true);
+    
+    // Filtrar apenas os selecionados
     const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
-    const addresses = selectedCustomers.map(c => `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`);
+    
+    // Preparar lista de strings de endereços completos para a IA ordenar
+    const addressStrings = selectedCustomers.map(c => 
+      `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}${c.city ? `, ${c.city}` : ''}`
+    );
+    
     try {
-      const orderedAddresses = await optimizeRouteOrder(addresses);
-      const query = orderedAddresses.join(' / ');
-      window.open(`https://www.google.com/maps/dir/${encodeURIComponent(query)}`, '_blank');
+      // IA ordena os endereços logicamente
+      const orderedAddresses = await optimizeRouteOrder(addressStrings);
+      
+      // Montagem correta da URL do Google Maps: maps/dir/Destino1/Destino2/Destino3...
+      // Cada endereço deve ser codificado individualmente
+      const routePath = orderedAddresses
+        .map(addr => encodeURIComponent(addr.trim()))
+        .join('/');
+      
+      window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
-      alert('Não foi possível otimizar no momento.');
+      console.error(error);
+      alert('Não foi possível otimizar no momento. Tentando abrir endereços básicos...');
+      // Fallback simples caso a IA falhe
+      const fallbackPath = addressStrings.map(addr => encodeURIComponent(addr)).join('/');
+      window.open(`https://www.google.com/maps/dir/${fallbackPath}`, '_blank');
     } finally {
       setIsOptimizing(false);
     }
@@ -312,7 +330,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Modais... */}
+      {/* Modal: Importação */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-20">
@@ -357,6 +375,7 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Modal: Cadastro/Edição Manual */}
       {isManualModalOpen && editingCustomer && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
           <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-20">
