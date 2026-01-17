@@ -1,8 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+// Schema for customer data extraction
 const customerSchema = {
   type: Type.ARRAY,
   items: {
@@ -20,8 +19,13 @@ const customerSchema = {
   }
 };
 
+/**
+ * Parses a file (image, PDF, etc.) to extract customer information using Gemini.
+ */
 export const parseFileToCustomers = async (base64Data: string, mimeType: string) => {
   try {
+    // Creating instance inside the function to ensure the latest API key is used
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const filePart = {
       inlineData: {
         data: base64Data,
@@ -31,20 +35,12 @@ export const parseFileToCustomers = async (base64Data: string, mimeType: string)
 
     const textPart = {
       text: `Você é um robô de extração de dados especializado em tabelas de rotas comerciais. 
-      Analise o arquivo anexo meticulosamente. 
-      
-      ESTRUTURA ESPERADA:
-      Existem colunas para Ordem, Cliente, Endereço, Bairro, Cidade, Estado, País, Telefone e Status.
-      
-      MISSÃO:
-      Extraia CADA LINHA da tabela como um objeto JSON. Não pule nenhuma linha, mesmo que pareça repetitiva.
-      Se o documento tiver várias páginas, processe todas elas.
-      
-      Retorne uma lista JSON pura seguindo o schema informado.`
+      Extraia CADA LINHA da tabela como um objeto JSON. Não pule nenhuma linha.
+      Retorne uma lista JSON pura.`
     };
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview", // Mudado para Pro para melhor detecção de tabelas em PDF
+      model: "gemini-3-pro-preview",
       contents: { parts: [filePart, textPart] },
       config: {
         responseMimeType: "application/json",
@@ -54,39 +50,41 @@ export const parseFileToCustomers = async (base64Data: string, mimeType: string)
 
     return JSON.parse(response.text || "[]");
   } catch (error) {
-    console.error("Erro na extração de arquivo:", error);
+    console.error("Erro na extração:", error);
     throw error;
   }
 };
 
+/**
+ * Parses raw text to extract customer information using Gemini.
+ */
 export const parseRawTextToCustomers = async (text: string) => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Transforme o texto abaixo em uma lista de clientes JSON. 
-      O texto veio de um OCR de tabela. Identifique as colunas de Nome, Endereço e Telefone corretamente.
-      
-      Texto:
-      ${text}`,
+      contents: `Transforme o texto em JSON de clientes: ${text}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: customerSchema,
       },
     });
-
     return JSON.parse(response.text || "[]");
   } catch (error) {
-    console.error("Erro no processamento de texto:", error);
+    console.error("Erro no texto:", error);
     throw error;
   }
 };
 
+/**
+ * Optimizes a list of addresses for the best delivery route.
+ */
 export const optimizeRouteOrder = async (addresses: string[]) => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Você é um roteirizador logístico. Ordene estes endereços de entrega para percorrer a menor distância total:
-      ${addresses.join('\n')}`,
+      contents: `Ordene estes endereços para a melhor rota: ${addresses.join('\n')}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -95,7 +93,6 @@ export const optimizeRouteOrder = async (addresses: string[]) => {
         }
       },
     });
-
     return JSON.parse(response.text || "[]");
   } catch (error) {
     console.error("Erro na otimização:", error);
