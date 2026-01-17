@@ -19,14 +19,12 @@ const customerSchema = {
 };
 
 /**
- * Inicializa o cliente AI garantindo o uso da API_KEY do ambiente ou do seletor.
+ * Inicializa o cliente AI. No Vercel, process.env.API_KEY é injetado automaticamente.
+ * Criamos a instância sempre no momento do uso para garantir que a chave mais atual seja utilizada.
  */
 const getAiClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("Chave de API não configurada no ambiente.");
-  }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: apiKey || '' });
 };
 
 export const parseFileToCustomers = async (base64Data: string, mimeType: string) => {
@@ -65,16 +63,16 @@ export const optimizeRouteOrder = async (addresses: string[]) => {
   
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
-    contents: `Você é um especialista em logística de última milha (Last Mile).
-    Sua tarefa é REORDENAR a lista para o MENOR PERCURSO GERAL.
+    contents: `Você é um especialista em logística de vendas externas.
+    Sua tarefa é REORDENAR a lista para o MENOR PERCURSO GERAL começando pela ORIGEM (GPS).
 
-    REGRAS DE OTIMIZAÇÃO:
-    1. O primeiro item é a ORIGEM (GPS). Mantenha-o no topo.
-    2. Agrupe endereços por PROXIMIDADE RADICAL (mesma rua > mesmo bairro > bairro vizinho).
-    3. Trace uma rota "circular" ou "em arco". O vendedor nunca deve ir para o Norte e depois para o Sul se houver pontos intermediários.
-    4. Ignore erros de digitação leves e foque na lógica geográfica das ruas citadas.
+    REGRAS:
+    1. O primeiro item é a ORIGEM. Mantenha-o no topo da lista final.
+    2. Agrupe endereços por proximidade geográfica extrema (mesma rua ou quarteirão).
+    3. Organize por bairros vizinhos para evitar que o vendedor atravesse a cidade várias vezes.
+    4. O objetivo é economizar combustível e tempo.
 
-    DADOS (Origem + Destinos):
+    DADOS:
     ${addresses.join('\n')}`,
     config: {
       thinkingConfig: { thinkingBudget: 15000 },

@@ -12,8 +12,7 @@ import {
   Trash2,
   FileText,
   Save,
-  Key,
-  AlertTriangle
+  Key
 } from 'lucide-react';
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
@@ -154,10 +153,12 @@ const App: React.FC = () => {
   };
 
   const checkAndEnsureKey = async () => {
+    // Se a chave não for detectada automaticamente (process.env.API_KEY), 
+    // verificamos se o usuário já selecionou uma manualmente.
     if (!process.env.API_KEY) {
       const hasKey = await (window as any).aistudio?.hasSelectedApiKey();
       if (!hasKey) {
-        alert("Chave de API não configurada no Vercel. Por favor, selecione uma chave manual para continuar.");
+        // Só abre o seletor se realmente não houver nenhuma chave configurada.
         await (window as any).aistudio?.openSelectKey();
       }
     }
@@ -180,7 +181,7 @@ const App: React.FC = () => {
             setIsImportModalOpen(false);
           } catch (err) {
             console.error(err);
-            alert('Falha na IA. Verifique se a API_KEY foi configurada no painel do Vercel.');
+            alert('A IA não respondeu. Certifique-se de fazer um "Redeploy" no Vercel após salvar a API_KEY.');
           }
         }
         setIsProcessing(false);
@@ -202,7 +203,7 @@ const App: React.FC = () => {
       setIsImportModalOpen(false);
       setImportText('');
     } catch (error) {
-      alert('Erro na API de Inteligência Artificial.');
+      alert('Houve um erro na comunicação com a IA.');
     } finally {
       setIsProcessing(false);
     }
@@ -232,11 +233,11 @@ const App: React.FC = () => {
     
     try {
       const currentPos = await getCurrentLocation();
-      setOptimizationStatus('IA Otimizando Menor Percurso...');
+      setOptimizationStatus('IA Otimizando Rota...');
       
       const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
       const addressStrings = selectedCustomers.map(c => 
-        `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}, ${c.state || ''}`
+        `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`
       );
       
       const addressesToOptimize = currentPos ? [currentPos, ...addressStrings] : addressStrings;
@@ -249,7 +250,7 @@ const App: React.FC = () => {
       window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
       console.error(error);
-      alert('A IA não conseguiu responder. Verifique a configuração da API_KEY no Vercel.');
+      alert('Erro ao otimizar. Se o erro persistir, use o ícone da chave no topo para configurar manualmente.');
     } finally {
       setIsOptimizing(false);
       setOptimizationStatus('');
@@ -257,7 +258,7 @@ const App: React.FC = () => {
   };
 
   const clearAllData = () => {
-    if (confirm('Apagar todos os dados permanentemente?')) {
+    if (confirm('Deseja apagar todos os clientes salvos localmente?')) {
       setCustomers([]);
       localStorage.removeItem('cosmo_customers');
       setSelectedIds(new Set());
@@ -266,14 +267,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto shadow-xl relative overflow-x-hidden">
-      {/* Alerta de Chave Faltando (Apenas se não houver no ambiente) */}
-      {!process.env.API_KEY && (
-        <div className="bg-amber-50 border-b border-amber-100 p-2 flex items-center justify-center gap-2 text-[10px] text-amber-700 font-bold uppercase tracking-tight">
-          <AlertTriangle className="w-3 h-3" />
-          Configuração de API pendente no Vercel
-        </div>
-      )}
-
       {/* Header Fixo */}
       <header className="bg-white border-b sticky top-0 z-30 px-4 py-4 flex flex-col gap-3">
         <div className="flex justify-between items-center">
@@ -283,11 +276,11 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="font-bold text-slate-900 leading-none">Rota Ágil</h1>
-              <p className="text-[10px] text-pink-600 font-bold uppercase mt-1">Inteligência Logística</p>
+              <p className="text-[10px] text-pink-600 font-bold uppercase mt-1">Vendas Externas</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => (window as any).aistudio?.openSelectKey()} title="Configurar Chave" className="p-2 text-slate-400 hover:text-blue-500">
+            <button onClick={() => (window as any).aistudio?.openSelectKey()} title="Chave de API" className="p-2 text-slate-400 hover:text-blue-500 transition-colors">
               <Key className="w-4 h-4" />
             </button>
             <button onClick={clearAllData} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
@@ -300,8 +293,8 @@ const App: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
           <input 
             type="text" 
-            placeholder="Buscar clientes ou bairros..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner"
+            placeholder="Buscar por nome ou endereço..."
+            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -312,10 +305,10 @@ const App: React.FC = () => {
       <main className="flex-1 p-4 pb-32 overflow-y-auto no-scrollbar">
         <div className="mb-4 px-1 flex justify-between items-center">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {selectedIds.size > 0 ? `${selectedIds.size} selecionados para rota` : `${filteredCustomers.length} clientes na base`}
+            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes cadastrados`}
           </span>
           {selectedIds.size > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full">Limpar</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Desmarcar Todos</button>
           )}
         </div>
 
@@ -332,7 +325,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Barra de Ações Inferior */}
+      {/* Rodapé de Ações */}
       <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">
         <div className="bg-white border border-slate-100 shadow-2xl rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
@@ -347,7 +340,7 @@ const App: React.FC = () => {
                   <span className="text-xs uppercase font-black">{optimizationStatus}</span>
                 </div>
               ) : (
-                <><Navigation className="w-5 h-5 text-pink-500" /><span>GERAR MENOR PERCURSO</span></>
+                <><Navigation className="w-5 h-5 text-pink-500" /><span>OTIMIZAR ROTA NO MAPA</span></>
               )}
             </button>
           ) : (
@@ -380,13 +373,13 @@ const App: React.FC = () => {
                 <div className={`p-4 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
                   {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
                 </div>
-                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Extrair de Foto ou PDF'}</p>
+                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto de Planilha ou PDF'}</p>
               </div>
 
               <div className="space-y-3">
-                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium" placeholder="Ou cole a lista de nomes e endereços..." value={importText} onChange={(e) => setImportText(e.target.value)} disabled={isProcessing} />
-                <button onClick={handleTextImport} disabled={isProcessing || !importText.trim()} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30">
-                  {isProcessing ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'PROCESSAR TEXTO'}
+                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium" placeholder="Ou cole a lista de contatos..." value={importText} onChange={(e) => setImportText(e.target.value)} disabled={isProcessing} />
+                <button onClick={handleTextImport} disabled={isProcessing || !importText.trim()} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30 active:scale-95 transition-all">
+                  {isProcessing ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'PROCESSAR COM IA'}
                 </button>
               </div>
             </div>
