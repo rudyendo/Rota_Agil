@@ -19,70 +19,79 @@ const customerSchema = {
 };
 
 /**
- * Inicializa o cliente AI. No Vercel, process.env.API_KEY é injetado automaticamente.
- * Criamos a instância sempre no momento do uso para garantir que a chave mais atual seja utilizada.
+ * Inicializa o cliente AI.
+ * No Vercel, a API_KEY deve ser configurada nas Environment Variables do projeto.
  */
 const getAiClient = () => {
   const apiKey = process.env.API_KEY;
-  return new GoogleGenAI({ apiKey: apiKey || '' });
+  if (!apiKey) {
+    throw new Error("API_KEY_MISSING");
+  }
+  return new GoogleGenAI({ apiKey });
 };
 
 export const parseFileToCustomers = async (base64Data: string, mimeType: string) => {
-  const ai = getAiClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: {
-      parts: [
-        { inlineData: { data: base64Data, mimeType } },
-        { text: "Extraia cada linha da tabela como JSON. Não pule ninguém." }
-      ]
-    },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: customerSchema,
-    },
-  });
-  return JSON.parse(response.text || "[]");
+  try {
+    const ai = getAiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: {
+        parts: [
+          { inlineData: { data: base64Data, mimeType } },
+          { text: "Extraia todos os clientes desta imagem/documento para JSON. Inclua nome, endereço, bairro e telefone se disponíveis." }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: customerSchema,
+      },
+    });
+    return JSON.parse(response.text || "[]");
+  } catch (error: any) {
+    throw error;
+  }
 };
 
 export const parseRawTextToCustomers = async (text: string) => {
-  const ai = getAiClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Transforme em JSON: ${text}`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: customerSchema,
-    },
-  });
-  return JSON.parse(response.text || "[]");
+  try {
+    const ai = getAiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Transforme o seguinte texto em uma lista de clientes JSON: ${text}`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: customerSchema,
+      },
+    });
+    return JSON.parse(response.text || "[]");
+  } catch (error: any) {
+    throw error;
+  }
 };
 
 export const optimizeRouteOrder = async (addresses: string[]) => {
-  const ai = getAiClient();
-  
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
-    contents: `Você é um especialista em logística de vendas externas.
-    Sua tarefa é REORDENAR a lista para o MENOR PERCURSO GERAL começando pela ORIGEM (GPS).
-
-    REGRAS:
-    1. O primeiro item é a ORIGEM. Mantenha-o no topo da lista final.
-    2. Agrupe endereços por proximidade geográfica extrema (mesma rua ou quarteirão).
-    3. Organize por bairros vizinhos para evitar que o vendedor atravesse a cidade várias vezes.
-    4. O objetivo é economizar combustível e tempo.
-
-    DADOS:
-    ${addresses.join('\n')}`,
-    config: {
-      thinkingConfig: { thinkingBudget: 15000 },
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING }
-      }
-    },
-  });
-  
-  return JSON.parse(response.text || "[]");
+  try {
+    const ai = getAiClient();
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Você é um GPS inteligente. Reordene estes endereços para o MENOR caminho possível.
+      O primeiro endereço é onde eu estou agora (ORIGEM).
+      Retorne apenas a lista de endereços em ordem, um por linha.
+      
+      ENDEREÇOS:
+      ${addresses.join('\n')}`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        }
+      },
+    });
+    
+    return JSON.parse(response.text || "[]");
+  } catch (error: any) {
+    throw error;
+  }
 };

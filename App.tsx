@@ -12,7 +12,8 @@ import {
   Trash2,
   FileText,
   Save,
-  Key
+  Key,
+  AlertCircle
 } from 'lucide-react';
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
@@ -152,14 +153,32 @@ const App: React.FC = () => {
     });
   };
 
+  const handleError = async (error: any) => {
+    console.error("Erro na API:", error);
+    
+    if (error.message === "API_KEY_MISSING") {
+      alert("Chave de API não encontrada. Se você configurou no Vercel, lembre-se de fazer um REDEPLOY do seu projeto.");
+      if ((window as any).aistudio) {
+        await (window as any).aistudio.openSelectKey();
+      }
+      return;
+    }
+
+    if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not valid")) {
+      alert("A chave de API parece inválida ou não tem permissão para este modelo.");
+      if ((window as any).aistudio) {
+        await (window as any).aistudio.openSelectKey();
+      }
+    } else {
+      alert(`Erro: ${error.message || "Falha na comunicação com a IA. Tente novamente."}`);
+    }
+  };
+
   const checkAndEnsureKey = async () => {
-    // Se a chave não for detectada automaticamente (process.env.API_KEY), 
-    // verificamos se o usuário já selecionou uma manualmente.
-    if (!process.env.API_KEY) {
-      const hasKey = await (window as any).aistudio?.hasSelectedApiKey();
+    if (!process.env.API_KEY && (window as any).aistudio) {
+      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
       if (!hasKey) {
-        // Só abre o seletor se realmente não houver nenhuma chave configurada.
-        await (window as any).aistudio?.openSelectKey();
+        await (window as any).aistudio.openSelectKey();
       }
     }
   };
@@ -180,8 +199,7 @@ const App: React.FC = () => {
             processExtractedData(data);
             setIsImportModalOpen(false);
           } catch (err) {
-            console.error(err);
-            alert('A IA não respondeu. Certifique-se de fazer um "Redeploy" no Vercel após salvar a API_KEY.');
+            handleError(err);
           }
         }
         setIsProcessing(false);
@@ -189,6 +207,7 @@ const App: React.FC = () => {
       reader.readAsDataURL(file);
     } catch (error) {
       setIsProcessing(false);
+      handleError(error);
     }
   };
 
@@ -203,7 +222,7 @@ const App: React.FC = () => {
       setIsImportModalOpen(false);
       setImportText('');
     } catch (error) {
-      alert('Houve um erro na comunicação com a IA.');
+      handleError(error);
     } finally {
       setIsProcessing(false);
     }
@@ -249,8 +268,7 @@ const App: React.FC = () => {
       
       window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
-      console.error(error);
-      alert('Erro ao otimizar. Se o erro persistir, use o ícone da chave no topo para configurar manualmente.');
+      handleError(error);
     } finally {
       setIsOptimizing(false);
       setOptimizationStatus('');
@@ -280,7 +298,11 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => (window as any).aistudio?.openSelectKey()} title="Chave de API" className="p-2 text-slate-400 hover:text-blue-500 transition-colors">
+            <button 
+              onClick={() => (window as any).aistudio?.openSelectKey()} 
+              title="Configurar Chave" 
+              className={`p-2 transition-colors ${!process.env.API_KEY ? 'text-amber-500 animate-pulse' : 'text-slate-400 hover:text-blue-500'}`}
+            >
               <Key className="w-4 h-4" />
             </button>
             <button onClick={clearAllData} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
@@ -294,7 +316,7 @@ const App: React.FC = () => {
           <input 
             type="text" 
             placeholder="Buscar por nome ou endereço..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner transition-all"
+            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -305,23 +327,30 @@ const App: React.FC = () => {
       <main className="flex-1 p-4 pb-32 overflow-y-auto no-scrollbar">
         <div className="mb-4 px-1 flex justify-between items-center">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes cadastrados`}
+            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes`}
           </span>
           {selectedIds.size > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Desmarcar Todos</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Limpar Seleção</button>
           )}
         </div>
 
         <div className="space-y-1">
-          {filteredCustomers.map(customer => (
-            <CustomerCard 
-              key={customer.id} 
-              customer={customer}
-              isSelected={selectedIds.has(customer.id)}
-              onSelect={toggleSelect}
-              onEdit={handleEdit}
-            />
-          ))}
+          {filteredCustomers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+              <Users className="w-12 h-12 mb-2 opacity-20" />
+              <p className="text-sm font-medium">Nenhum cliente encontrado</p>
+            </div>
+          ) : (
+            filteredCustomers.map(customer => (
+              <CustomerCard 
+                key={customer.id} 
+                customer={customer}
+                isSelected={selectedIds.has(customer.id)}
+                onSelect={toggleSelect}
+                onEdit={handleEdit}
+              />
+            ))
+          )}
         </div>
       </main>
 
@@ -340,7 +369,7 @@ const App: React.FC = () => {
                   <span className="text-xs uppercase font-black">{optimizationStatus}</span>
                 </div>
               ) : (
-                <><Navigation className="w-5 h-5 text-pink-500" /><span>OTIMIZAR ROTA NO MAPA</span></>
+                <><Navigation className="w-5 h-5 text-pink-500" /><span>OTIMIZAR NO MAPA</span></>
               )}
             </button>
           ) : (
@@ -373,7 +402,7 @@ const App: React.FC = () => {
                 <div className={`p-4 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
                   {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
                 </div>
-                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto de Planilha ou PDF'}</p>
+                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto ou PDF de Lista'}</p>
               </div>
 
               <div className="space-y-3">
