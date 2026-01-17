@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [importStatus, setImportStatus] = useState<string>('');
   const [importText, setImportText] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizationStatus, setOptimizationStatus] = useState<string>('');
   
   const [editingCustomer, setEditingCustomer] = useState<Partial<Customer> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -192,24 +193,44 @@ const App: React.FC = () => {
     }
   };
 
+  const getCurrentLocation = (): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve("");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve(`${position.coords.latitude},${position.coords.longitude}`);
+        },
+        () => {
+          resolve(""); 
+        },
+        { timeout: 8000, enableHighAccuracy: true } // Tempo extra para alta precisão
+      );
+    });
+  };
+
   const handleOptimize = async () => {
     if (selectedIds.size === 0) return;
     setIsOptimizing(true);
-    
-    // Filtrar apenas os selecionados
-    const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
-    
-    // Preparar lista de strings de endereços completos para a IA ordenar
-    const addressStrings = selectedCustomers.map(c => 
-      `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}${c.city ? `, ${c.city}` : ''}`
-    );
+    setOptimizationStatus('Localizando...');
     
     try {
-      // IA ordena os endereços logicamente
-      const orderedAddresses = await optimizeRouteOrder(addressStrings);
+      const currentPos = await getCurrentLocation();
       
-      // Montagem correta da URL do Google Maps: maps/dir/Destino1/Destino2/Destino3...
-      // Cada endereço deve ser codificado individualmente
+      setOptimizationStatus('Menor Percurso...');
+      
+      const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
+      const addressStrings = selectedCustomers.map(c => 
+        `${c.address}${c.neighborhood ? `, ${c.neighborhood}` : ''}${c.city ? `, ${c.city}` : ''}`
+      );
+      
+      const addressesToOptimize = currentPos ? [currentPos, ...addressStrings] : addressStrings;
+      
+      // Chama o Gemini 3 Pro com o prompt ultra-específico de menor percurso
+      const orderedAddresses = await optimizeRouteOrder(addressesToOptimize);
+      
       const routePath = orderedAddresses
         .map(addr => encodeURIComponent(addr.trim()))
         .join('/');
@@ -217,12 +238,10 @@ const App: React.FC = () => {
       window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
     } catch (error) {
       console.error(error);
-      alert('Não foi possível otimizar no momento. Tentando abrir endereços básicos...');
-      // Fallback simples caso a IA falhe
-      const fallbackPath = addressStrings.map(addr => encodeURIComponent(addr)).join('/');
-      window.open(`https://www.google.com/maps/dir/${fallbackPath}`, '_blank');
+      alert('Erro ao otimizar. Verifique o sinal do GPS.');
     } finally {
       setIsOptimizing(false);
+      setOptimizationStatus('');
     }
   };
 
@@ -307,7 +326,14 @@ const App: React.FC = () => {
               disabled={isOptimizing}
               className="w-full h-14 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
             >
-              {isOptimizing ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Navigation className="w-5 h-5 text-pink-500" /><span>OTIMIZAR ROTA</span></>}
+              {isOptimizing ? (
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-pink-500" />
+                  <span className="text-xs uppercase tracking-[0.2em] font-black">{optimizationStatus}</span>
+                </div>
+              ) : (
+                <><Navigation className="w-5 h-5 text-pink-500" /><span>CALCULAR MENOR ROTA</span></>
+              )}
             </button>
           ) : (
             <>
@@ -375,7 +401,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Cadastro/Edição Manual */}
+      {/* Modal: Cadastro Manual */}
       {isManualModalOpen && editingCustomer && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
           <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-20">

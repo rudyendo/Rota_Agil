@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Schema for customer data extraction
+// Schema para extração de dados de clientes
 const customerSchema = {
   type: Type.ARRAY,
   items: {
@@ -20,11 +20,10 @@ const customerSchema = {
 };
 
 /**
- * Parses a file (image, PDF, etc.) to extract customer information using Gemini.
+ * Extrai informações de clientes de arquivos (imagens, PDFs) usando IA.
  */
 export const parseFileToCustomers = async (base64Data: string, mimeType: string) => {
   try {
-    // Creating instance inside the function to ensure the latest API key is used
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const filePart = {
       inlineData: {
@@ -56,7 +55,7 @@ export const parseFileToCustomers = async (base64Data: string, mimeType: string)
 };
 
 /**
- * Parses raw text to extract customer information using Gemini.
+ * Converte texto bruto em JSON de clientes.
  */
 export const parseRawTextToCustomers = async (text: string) => {
   try {
@@ -77,15 +76,29 @@ export const parseRawTextToCustomers = async (text: string) => {
 };
 
 /**
- * Optimizes a list of addresses for the best delivery route.
+ * Otimiza a ordem dos endereços focando no MENOR PERCURSO GERAL.
  */
 export const optimizeRouteOrder = async (addresses: string[]) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Ordene estes endereços para a melhor rota: ${addresses.join('\n')}`,
+      model: "gemini-3-pro-preview",
+      contents: `Você é um motor de otimização logística avançado. Sua missão é resolver o Problema do Caixeiro Viajante para a lista abaixo.
+      
+      OBJETIVO: Retornar a sequência de endereços que resulta no MENOR PERCURSO TOTAL em quilômetros.
+      
+      REGRAS DE OURO:
+      1. O PRIMEIRO endereço (coordenadas ou texto) é o PONTO DE PARTIDA ATUAL. Ele deve permanecer na posição index 0.
+      2. Agrupe pontos por proximidade geográfica radical. Se dois endereços estão no mesmo bairro ou rua, eles devem ser visitados em sequência.
+      3. Evite "vaivém": A rota deve fluir como uma linha contínua ou um círculo eficiente, nunca cruzando a cidade de um lado para o outro repetidamente.
+      4. Analise a lógica dos nomes de ruas e numeração para deduzir a continuidade.
+      5. Retorne APENAS o array JSON com os endereços na nova ordem.
+
+      LISTA DE ENDEREÇOS (O primeiro é a origem):
+      ${addresses.join('\n')}`,
       config: {
+        thinkingConfig: { thinkingBudget: 8192 }, // Aumentado para permitir análise espacial mais profunda
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -93,9 +106,10 @@ export const optimizeRouteOrder = async (addresses: string[]) => {
         }
       },
     });
+    
     return JSON.parse(response.text || "[]");
   } catch (error) {
-    console.error("Erro na otimização:", error);
+    console.error("Erro na otimização de percurso:", error);
     return addresses;
   }
 };
