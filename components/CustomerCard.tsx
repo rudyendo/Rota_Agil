@@ -20,17 +20,22 @@ const CustomerCard: React.FC<CustomerCardProps> = ({
 }) => {
   const openWhatsApp = (phone: string) => {
     const cleanPhone = phone.replace(/\D/g, '');
-    window.open(`https://wa.me/55${cleanPhone}`, '_blank');
+    // No iOS, atribuição direta funciona melhor para disparar apps externos
+    window.location.href = `https://wa.me/55${cleanPhone}`;
   };
 
   const openMaps = (address: string) => {
-    const query = encodeURIComponent(`${address}, ${customer.neighborhood || ''}, ${customer.city || ''}, ${customer.state || ''}`);
+    const query = encodeURIComponent(`${address}, ${customer.neighborhood || ''}, ${customer.city || ''}`);
     
+    let url = '';
     if (preferredProvider === 'waze') {
-      window.open(`https://www.waze.com/ul?q=${query}&navigate=yes`, '_blank');
+      url = `https://www.waze.com/ul?q=${query}&navigate=yes`;
     } else {
-      window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+      url = `https://www.google.com/maps/search/?api=1&query=${query}`;
     }
+
+    // No iPhone, evitar window.open para não ser bloqueado pelo Safari
+    window.location.href = url;
   };
 
   return (

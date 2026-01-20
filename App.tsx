@@ -198,7 +198,7 @@ const App: React.FC = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         () => resolve(null),
-        { timeout: 5000 }
+        { timeout: 3000 } // Tempo menor para evitar bloqueio no iOS
       );
     });
   };
@@ -212,14 +212,14 @@ const App: React.FC = () => {
       const selectedList = customers.filter(c => selectedIds.has(c.id));
       const optimizedList = optimizeRouteRobo(selectedList, coords?.lat, coords?.lng);
 
+      let finalUrl = '';
+
       if (mapProvider === 'waze') {
-        // Waze não suporta rotas com várias paradas via URL deep link.
-        // Iremos navegar para o primeiro destino da rota otimizada.
         const firstDest = optimizedList[0];
         const query = encodeURIComponent(`${firstDest.address}, ${firstDest.neighborhood || ''}, ${firstDest.city || ''}`);
-        window.open(`https://www.waze.com/ul?q=${query}&navigate=yes`, '_blank');
+        // No iPhone, deep links funcionam melhor com atribuição direta à location
+        finalUrl = `https://www.waze.com/ul?q=${query}&navigate=yes`;
       } else {
-        // Google Maps suporta rotas complexas.
         const addressStrings = optimizedList.map(c => 
           `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`
         );
@@ -228,11 +228,16 @@ const App: React.FC = () => {
         const routePath = [startPoint, ...stops]
           .map(addr => encodeURIComponent(addr.trim()))
           .join('/');
-        window.open(`https://www.google.com/maps/dir/${routePath}`, '_blank');
+        finalUrl = `https://www.google.com/maps/dir/${routePath}`;
       }
+
+      // IMPORTANTE: No iPhone, usar window.location.href em vez de window.open
+      // para evitar o bloqueador de pop-ups em funções assíncronas.
+      window.location.href = finalUrl;
+      
     } catch (error) {
       console.error(error);
-      alert("Erro ao gerar rota.");
+      alert("Erro ao abrir o aplicativo de mapas.");
     } finally {
       setIsPreparingRoute(false);
     }
@@ -341,7 +346,7 @@ const App: React.FC = () => {
               {isPreparingRoute ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-5 h-5 animate-spin text-pink-500" />
-                  <span className="text-xs uppercase">Calculando Rota...</span>
+                  <span className="text-xs uppercase font-black">Abrindo App...</span>
                 </div>
               ) : (
                 <>
