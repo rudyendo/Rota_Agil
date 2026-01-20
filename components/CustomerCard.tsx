@@ -8,9 +8,16 @@ interface CustomerCardProps {
   onSelect?: (id: string) => void;
   onEdit?: (customer: Customer) => void;
   isSelected?: boolean;
+  preferredProvider?: 'google' | 'waze';
 }
 
-const CustomerCard: React.FC<CustomerCardProps> = ({ customer, onSelect, onEdit, isSelected }) => {
+const CustomerCard: React.FC<CustomerCardProps> = ({ 
+  customer, 
+  onSelect, 
+  onEdit, 
+  isSelected,
+  preferredProvider = 'google'
+}) => {
   const openWhatsApp = (phone: string) => {
     const cleanPhone = phone.replace(/\D/g, '');
     window.open(`https://wa.me/55${cleanPhone}`, '_blank');
@@ -18,7 +25,12 @@ const CustomerCard: React.FC<CustomerCardProps> = ({ customer, onSelect, onEdit,
 
   const openMaps = (address: string) => {
     const query = encodeURIComponent(`${address}, ${customer.neighborhood || ''}, ${customer.city || ''}, ${customer.state || ''}`);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+    
+    if (preferredProvider === 'waze') {
+      window.open(`https://www.waze.com/ul?q=${query}&navigate=yes`, '_blank');
+    } else {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+    }
   };
 
   return (
@@ -52,12 +64,12 @@ const CustomerCard: React.FC<CustomerCardProps> = ({ customer, onSelect, onEdit,
       <div className="space-y-2 mb-4">
         <div className="flex items-start text-slate-500 text-sm">
           <MapPin className="w-4 h-4 mr-2 mt-0.5 shrink-0" />
-          <span className="line-clamp-2">{customer.address}{customer.neighborhood ? `, ${customer.neighborhood}` : ''}{customer.city ? ` - ${customer.city}` : ''}</span>
+          <span className="line-clamp-2 font-medium">{customer.address}{customer.neighborhood ? `, ${customer.neighborhood}` : ''}{customer.city ? ` - ${customer.city}` : ''}</span>
         </div>
-        {customer.phone.length > 0 && (
+        {customer.phone.length > 0 && customer.phone[0] && (
           <div className="flex items-center text-slate-500 text-sm">
             <Phone className="w-4 h-4 mr-2 shrink-0" />
-            <span>{customer.phone[0]}</span>
+            <span className="font-medium">{customer.phone[0]}</span>
           </div>
         )}
       </div>
@@ -66,17 +78,19 @@ const CustomerCard: React.FC<CustomerCardProps> = ({ customer, onSelect, onEdit,
         <button 
           onClick={(e) => { e.stopPropagation(); openWhatsApp(customer.phone[0] || ''); }}
           disabled={!customer.phone[0]}
-          className="flex items-center justify-center gap-2 py-2 px-4 bg-emerald-500 text-white rounded-lg font-medium active:scale-95 transition-transform disabled:opacity-50"
+          className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-500 text-white rounded-xl font-bold active:scale-95 transition-transform disabled:opacity-50 shadow-md shadow-emerald-50"
         >
           <MessageCircle className="w-4 h-4" />
           WhatsApp
         </button>
         <button 
           onClick={(e) => { e.stopPropagation(); openMaps(customer.address); }}
-          className="flex items-center justify-center gap-2 py-2 px-4 bg-blue-500 text-white rounded-lg font-medium active:scale-95 transition-transform"
+          className={`flex items-center justify-center gap-2 py-3 px-4 text-white rounded-xl font-bold active:scale-95 transition-transform shadow-md ${
+            preferredProvider === 'waze' ? 'bg-sky-400 shadow-sky-50' : 'bg-blue-500 shadow-blue-50'
+          }`}
         >
           <MapPin className="w-4 h-4" />
-          Mapa
+          {preferredProvider === 'waze' ? 'Waze' : 'Mapa'}
         </button>
       </div>
     </div>

@@ -12,16 +12,14 @@ const customerSchema = {
       city: { type: Type.STRING, description: "Cidade" },
       state: { type: Type.STRING, description: "Estado" },
       phone: { type: Type.STRING, description: "Telefone" },
-      status: { type: Type.STRING, description: "Status" }
+      status: { type: Type.STRING, description: "Status" },
+      latitude: { type: Type.NUMBER, description: "Latitude decimal aproximada do endereço" },
+      longitude: { type: Type.NUMBER, description: "Longitude decimal aproximada do endereço" }
     },
-    required: ["name"]
+    required: ["name", "address"]
   }
 };
 
-/**
- * Inicializa o cliente AI usando a variável de ambiente padrão process.env.API_KEY.
- * Esta é a única forma suportada para injeção automática de chaves nesta plataforma.
- */
 const getAiClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -37,7 +35,7 @@ export const parseFileToCustomers = async (base64Data: string, mimeType: string)
     contents: {
       parts: [
         { inlineData: { data: base64Data, mimeType } },
-        { text: "Extraia todos os clientes desta imagem/documento para JSON. Nome, endereço, bairro e telefone." }
+        { text: "Extraia os clientes para JSON. IMPORTANTE: Inclua latitude e longitude aproximadas baseadas no endereço para que eu possa calcular rotas." }
       ]
     },
     config: {
@@ -52,7 +50,7 @@ export const parseRawTextToCustomers = async (text: string) => {
   const ai = getAiClient();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Transforme o seguinte texto em uma lista de clientes JSON: ${text}`,
+    contents: `Transforme o texto em clientes JSON com coordenadas (lat/lng) aproximadas: ${text}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: customerSchema,

@@ -11,6 +11,8 @@ export interface Customer {
   status?: string;
   lastVisit?: string;
   notes?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface RouteStop {
