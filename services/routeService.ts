@@ -1,65 +1,85 @@
-
+// services/routeService.ts
 import { Customer } from '../types';
 
-/**
- * Calcula a distância em km entre dois pontos usando a fórmula de Haversine
- */
-const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+// --- Matemática da Terra (Fórmula de Haversine) ---
+// Calcula a distância em km entre dois pontos considerando a curvatura da Terra
+function calcularDistanciaKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Raio da Terra em km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
-};
+}
 
 /**
- * Robô de Otimização Matemática (Vizinho Mais Próximo)
- * Resolve o problema do caixeiro viajante de forma eficiente para uso móvel.
+ * Organiza a rota usando o método "Vizinho Mais Próximo".
+ * @param pontoPartida - Onde o entregador começa (ex: Sede)
+ * @param clientes - A lista de clientes para visitar
  */
-export const optimizeRouteRobo = (
-  customers: Customer[], 
-  startLat?: number, 
-  startLng?: number
+export const otimizarRota = (
+  pontoPartida: { lat: number, lng: number }, 
+  clientes: Customer[]
 ): Customer[] => {
-  if (customers.length <= 1) return customers;
-
-  const unvisited = [...customers];
-  const optimized: Customer[] = [];
   
-  // Define o ponto de partida (localização atual ou primeiro da lista)
-  let currentLat = startLat || customers[0].latitude || 0;
-  let currentLng = startLng || customers[0].longitude || 0;
+  // 1. Separa quem tem GPS de quem não tem
+  const comCoords = clientes.filter(c => c.latitude !== undefined && c.longitude !== undefined);
+  const semCoords = clientes.filter(c => c.latitude === undefined || c.longitude === undefined);
 
-  while (unvisited.length > 0) {
-    let closestIndex = 0;
-    let minDistance = Infinity;
+  // Se ninguém tiver GPS, devolve a lista original sem mexer
+  if (comCoords.length === 0) return clientes;
 
-    for (let i = 0; i < unvisited.length; i++) {
-      const target = unvisited[i];
-      // Se não tiver coordenadas, assume distância infinita para ir pro final
-      const dist = (target.latitude && target.longitude) 
-        ? getDistance(currentLat, currentLng, target.latitude, target.longitude)
-        : 999999;
+  const rotaOrdenada: Customer[] = [];
+  
+  // Começamos a rota na posição do ponto de partida
+  let atualLat = pontoPartida.lat;
+  let atualLng = pontoPartida.lng;
 
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestIndex = i;
+  // Vamos usar uma cópia para ir removendo os visitados
+  const pendentes = [...comCoords];
+
+  // 2. Loop principal: Enquanto houver clientes pendentes...
+  while (pendentes.length > 0) {
+    let indexMaisProximo = -1;
+    let menorDistancia = Infinity;
+
+    // Compara a distância do ponto ATUAL para todos os pendentes
+    for (let i = 0; i < pendentes.length; i++) {
+      const cliente = pendentes[i];
+      // O compilador TypeScript reclama se não garantirmos que existe, por isso o "!" ou verificação
+      if (cliente.latitude && cliente.longitude) {
+        const dist = calcularDistanciaKm(atualLat, atualLng, cliente.latitude, cliente.longitude);
+        
+        if (dist < menorDistancia) {
+          menorDistancia = dist;
+          indexMaisProximo = i;
+        }
       }
     }
 
-    const nextCustomer = unvisited.splice(closestIndex, 1)[0];
-    optimized.push(nextCustomer);
-    
-    // Atualiza a posição para o próximo passo
-    if (nextCustomer.latitude && nextCustomer.longitude) {
-      currentLat = nextCustomer.latitude;
-      currentLng = nextCustomer.longitude;
+    // 3. Achamos o vencedor!
+    if (indexMaisProximo !== -1) {
+      const proximoCliente = pendentes[indexMaisProximo];
+      
+      // Adiciona à rota final
+      rotaOrdenada.push(proximoCliente);
+      
+      // Atualiza a nossa posição: agora estamos neste cliente
+      if (proximoCliente.latitude && proximoCliente.longitude) {
+        atualLat = proximoCliente.latitude;
+        atualLng = proximoCliente.longitude;
+      }
+
+      // Remove da lista de pendentes para não visitar de novo
+      pendentes.splice(indexMaisProximo, 1);
+    } else {
+      break; // Segurança
     }
   }
 
-  return optimized;
+  // 4. Retorna a rota organizada + os clientes sem GPS no final (para não serem esquecidos)
+  return [...rotaOrdenada, ...semCoords];
 };
