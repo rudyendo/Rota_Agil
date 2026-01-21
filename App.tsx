@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Users, 
@@ -11,37 +10,35 @@ import {
   Trash2,
   FileText,
   Save,
-  CheckCircle,
-  MapPin,
-  Settings
+  MapPin
 } from 'lucide-react';
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
 import CustomerCard from './components/CustomerCard';
-import { parseFileToCustomers, parseRawTextToCustomers } from './services/geminiService';
-import { optimizeRouteRobo } from './services/routeService';
+// Importamos as novas funções inteligentes aqui
+import { parseFileToCustomers, parseRawTextToCustomers, getCoordinates } from './services/geminiService';
+import { otimizarRota } from './services/routeService';
 
 const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mapProvider, setMapProvider] = useState<'google' | 'waze'>('google');
   
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
   const [importText, setImportText] = useState('');
+  
+  // Estados para a rota inteligente
   const [isPreparingRoute, setIsPreparingRoute] = useState(false);
+  const [routeStatus, setRouteStatus] = useState<string>('');
   
   const [editingCustomer, setEditingCustomer] = useState<Partial<Customer> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('cosmo_customers');
-    const savedProvider = localStorage.getItem('cosmo_map_provider') as 'google' | 'waze';
-    if (savedProvider) setMapProvider(savedProvider);
-
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -58,8 +55,7 @@ const App: React.FC = () => {
     if (customers.length > 0) {
       localStorage.setItem('cosmo_customers', JSON.stringify(customers));
     }
-    localStorage.setItem('cosmo_map_provider', mapProvider);
-  }, [customers, mapProvider]);
+  }, [customers]);
 
   const filteredCustomers = useMemo(() => {
     const term = searchTerm.toLowerCase();
@@ -130,13 +126,27 @@ const App: React.FC = () => {
           c.name.toLowerCase().trim() === newCust.name.toLowerCase().trim()
         );
         if (index >= 0) {
-          updated[index] = { ...updated[index], ...newCust };
+          const existing = { ...updated[index] };
+          if (newCust.address && existing.address !== newCust.address) {
+            if (!existing.secondaryAddresses.includes(newCust.address)) {
+              existing.secondaryAddresses.push(newCust.address);
+            }
+          }
+          if (newCust.phone && !existing.phone.includes(newCust.phone)) {
+            existing.phone.push(newCust.phone);
+          }
+          updated[index] = existing;
         } else {
           updated.push({
             id: Math.random().toString(36).substr(2, 9),
-            ...newCust,
+            name: newCust.name,
+            address: newCust.address || '',
+            neighborhood: newCust.neighborhood || '',
+            city: newCust.city || '',
+            state: newCust.state || 'RN',
             phone: newCust.phone ? [newCust.phone] : [],
-            secondaryAddresses: []
+            secondaryAddresses: [],
+            status: newCust.status || 'Ativo'
           });
         }
       });
@@ -144,11 +154,20 @@ const App: React.FC = () => {
     });
   };
 
+  const handleError = (error: any) => {
+    console.error("Erro na aplicação:", error);
+    if (error.message === "API_KEY_NOT_FOUND") {
+      alert("A variável de ambiente API_KEY não foi encontrada.");
+    } else {
+      alert("Houve um erro na comunicação com a IA.");
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
-    setImportStatus('IA Geocodificando...');
+    setImportStatus('IA lendo arquivo...');
     try {
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -159,8 +178,7 @@ const App: React.FC = () => {
             processExtractedData(data);
             setIsImportModalOpen(false);
           } catch (err) {
-            console.error(err);
-            alert("Erro na leitura.");
+            handleError(err);
           }
         }
         setIsProcessing(false);
@@ -168,83 +186,131 @@ const App: React.FC = () => {
       reader.readAsDataURL(file);
     } catch (error) {
       setIsProcessing(false);
-      console.error(error);
+      handleError(error);
     }
   };
 
   const handleTextImport = async () => {
     if (!importText.trim()) return;
     setIsProcessing(true);
-    setImportStatus('IA Localizando...');
+    setImportStatus('IA Processando...');
     try {
       const data = await parseRawTextToCustomers(importText);
       processExtractedData(data);
       setIsImportModalOpen(false);
       setImportText('');
     } catch (error) {
-      console.error(error);
-      alert("Erro no processamento.");
+      handleError(error);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const getCurrentCoords = (): Promise<{lat: number, lng: number} | null> => {
+  const getCurrentLocation = (): Promise<string> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve(null);
+        resolve("");
         return;
       }
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { timeout: 3000 } // Tempo menor para evitar bloqueio no iOS
+        (position) => {
+          resolve(`${position.coords.latitude},${position.coords.longitude}`);
+        },
+        () => resolve(""),
+        { timeout: 10000, enableHighAccuracy: true }
       );
     });
   };
 
-  const handleViewOnMap = async () => {
+  // --- NOVA FUNÇÃO DE ROTA INTELIGENTE ---
+  const handleSmartRoute = async () => {
     if (selectedIds.size === 0) return;
+
     setIsPreparingRoute(true);
-    
+    setRouteStatus('Verificando endereços...');
+
     try {
-      const coords = await getCurrentCoords();
-      const selectedList = customers.filter(c => selectedIds.has(c.id));
-      const optimizedList = optimizeRouteRobo(selectedList, coords?.lat, coords?.lng);
+      // 1. Prepara os clientes selecionados
+      const selectedCustomers = customers.filter(c => selectedIds.has(c.id));
+      
+      // Criamos um mapa para atualizar o estado global se acharmos novas coordenadas
+      const updatedCustomersMap = new Map(customers.map(c => [c.id, c]));
+      let coordenadasEncontradas = 0;
 
-      let finalUrl = '';
+      // 2. Busca GPS para quem não tem (Limite de 10 por vez para economizar IA)
+      const LIMITE_BUSCA_IA = 10;
+      let buscasFeitas = 0;
 
-      if (mapProvider === 'waze') {
-        const firstDest = optimizedList[0];
-        const query = encodeURIComponent(`${firstDest.address}, ${firstDest.neighborhood || ''}, ${firstDest.city || ''}`);
-        // No iPhone, deep links funcionam melhor com atribuição direta à location
-        finalUrl = `https://www.waze.com/ul?q=${query}&navigate=yes`;
-      } else {
-        const addressStrings = optimizedList.map(c => 
-          `${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`
-        );
-        const startPoint = coords ? `${coords.lat},${coords.lng}` : addressStrings[0];
-        const stops = coords ? addressStrings : addressStrings.slice(1);
-        const routePath = [startPoint, ...stops]
-          .map(addr => encodeURIComponent(addr.trim()))
-          .join('/');
-        finalUrl = `https://www.google.com/maps/dir/${routePath}`;
+      for (let i = 0; i < selectedCustomers.length; i++) {
+        const cliente = selectedCustomers[i];
+
+        // Se falta latitude ou longitude, chamamos o Gemini
+        if (!cliente.latitude || !cliente.longitude) {
+          if (buscasFeitas < LIMITE_BUSCA_IA) {
+            setRouteStatus(`Geolocalizando: ${cliente.name.split(' ')[0]}...`);
+            
+            const coords = await getCoordinates(
+              cliente.address, 
+              cliente.city || 'Natal', 
+              cliente.state || 'RN'
+            );
+
+            if (coords) {
+              // Atualiza o objeto local e o mapa global
+              const clienteAtualizado = { ...cliente, latitude: coords.lat, longitude: coords.lng };
+              selectedCustomers[i] = clienteAtualizado;
+              updatedCustomersMap.set(cliente.id, clienteAtualizado);
+              coordenadasEncontradas++;
+            }
+            buscasFeitas++;
+          }
+        }
       }
 
-      // IMPORTANTE: No iPhone, usar window.location.href em vez de window.open
-      // para evitar o bloqueador de pop-ups em funções assíncronas.
-      window.location.href = finalUrl;
+      // 3. Se achamos novos GPS, salvamos no estado global (persistence)
+      if (coordenadasEncontradas > 0) {
+        setCustomers(Array.from(updatedCustomersMap.values()));
+      }
+
+      setRouteStatus('Calculando melhor trajeto...');
+
+      // 4. Otimização Matemática da Rota
+      const locationString = await getCurrentLocation();
+      let pontoPartida = { lat: -5.79448, lng: -35.211 }; // Padrão: Natal
       
+      if (locationString) {
+        const [lat, lng] = locationString.split(',');
+        pontoPartida = { lat: parseFloat(lat), lng: parseFloat(lng) };
+      }
+
+      // Reordena a lista usando o algoritmo de vizinho mais próximo
+      const rotaOtimizada = otimizarRota(pontoPartida, selectedCustomers);
+
+      // 5. Abre o Google Maps com a rota otimizada
+      const waypoints = rotaOtimizada.map(c => {
+        if (c.latitude && c.longitude) {
+          return `${c.latitude},${c.longitude}`;
+        }
+        return encodeURIComponent(`${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`);
+      });
+
+      // Formato padrão do Google Maps: origem/destino1/destino2/...
+      const origin = locationString || `${pontoPartida.lat},${pontoPartida.lng}`;
+      const pathString = waypoints.join('/');
+      
+      window.open(`https://www.google.com/maps/dir/${origin}/${pathString}`, '_blank');
+
     } catch (error) {
       console.error(error);
-      alert("Erro ao abrir o aplicativo de mapas.");
+      alert("Erro ao otimizar rota. Verifique o console.");
     } finally {
       setIsPreparingRoute(false);
+      setRouteStatus('');
     }
   };
 
   const clearAllData = () => {
-    if (confirm('Apagar tudo?')) {
+    if (confirm('Deseja apagar todos os clientes salvos localmente?')) {
       setCustomers([]);
       localStorage.removeItem('cosmo_customers');
       setSelectedIds(new Set());
@@ -260,65 +326,42 @@ const App: React.FC = () => {
               <Navigation className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-bold text-slate-900 leading-none tracking-tight">Rota Ágil</h1>
-              <p className="text-[10px] text-pink-600 font-bold uppercase mt-1 tracking-wider">Vendas Externas</p>
+              <h1 className="font-bold text-slate-900 leading-none">Rota Ágil</h1>
+              <p className="text-[10px] text-pink-600 font-bold uppercase mt-1">Vendas Externas</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-             <button onClick={clearAllData} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-               <Trash2 className="w-5 h-5" />
-             </button>
-          </div>
+          <button onClick={clearAllData} title="Limpar Tudo" className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+            <Trash2 className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input 
-              type="text" 
-              placeholder="Buscar por nome ou bairro..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner transition-all"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0">
-            <button 
-              onClick={() => setMapProvider('google')}
-              className={`px-3 py-2 rounded-xl text-[10px] font-black transition-all ${mapProvider === 'google' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
-            >
-              G. MAPS
-            </button>
-            <button 
-              onClick={() => setMapProvider('waze')}
-              className={`px-3 py-2 rounded-xl text-[10px] font-black transition-all ${mapProvider === 'waze' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
-            >
-              WAZE
-            </button>
-          </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <input 
+            type="text" 
+            placeholder="Buscar por nome ou endereço..."
+            className="w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none text-sm shadow-inner"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
       </header>
 
       <main className="flex-1 p-4 pb-32 overflow-y-auto no-scrollbar">
         <div className="mb-4 px-1 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Users className="w-3 h-3 text-slate-400" />
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} contatos`}
-            </span>
-          </div>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            {selectedIds.size > 0 ? `${selectedIds.size} selecionados` : `${filteredCustomers.length} clientes cadastrados`}
+          </span>
           {selectedIds.size > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Limpar Seleção</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-xs font-bold text-pink-600 px-3 py-1 bg-pink-50 rounded-full active:scale-95 transition-all">Desmarcar Todos</button>
           )}
         </div>
 
         <div className="space-y-1">
           {filteredCustomers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-300">
-              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                <Users className="w-8 h-8 opacity-20" />
-              </div>
-              <p className="text-sm font-medium">Nenhum cliente cadastrado</p>
+              <Users className="w-12 h-12 mb-2 opacity-20" />
+              <p className="text-sm font-medium">Nenhum cliente encontrado</p>
             </div>
           ) : (
             filteredCustomers.map(customer => (
@@ -328,40 +371,39 @@ const App: React.FC = () => {
                 isSelected={selectedIds.has(customer.id)}
                 onSelect={toggleSelect}
                 onEdit={handleEdit}
-                preferredProvider={mapProvider}
               />
             ))
           )}
         </div>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto bg-gradient-to-t from-slate-50 via-slate-50/90 to-transparent">
-        <div className="bg-white border border-slate-100 shadow-2xl rounded-[2.5rem] p-3 flex items-center gap-3">
+      <div className="fixed bottom-0 left-0 right-0 p-4 z-40 max-w-lg mx-auto bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent">
+        <div className="bg-white border border-slate-100 shadow-2xl rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
             <button 
-              onClick={handleViewOnMap}
+              onClick={handleSmartRoute} // <--- AQUI ESTÁ A CHAMADA DA NOVA FUNÇÃO
               disabled={isPreparingRoute}
-              className="w-full h-16 bg-slate-900 text-white rounded-[1.8rem] font-black flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 shadow-xl shadow-slate-200"
+              className="w-full h-14 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
             >
               {isPreparingRoute ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <Loader2 className="w-5 h-5 animate-spin text-pink-500" />
-                  <span className="text-xs uppercase font-black">Abrindo App...</span>
+                  <span className="text-xs uppercase font-black">{routeStatus}</span>
                 </div>
               ) : (
                 <>
-                  <CheckCircle className="w-5 h-5 text-emerald-400" />
-                  <span>ABRIR {mapProvider === 'google' ? 'G. MAPS' : 'WAZE'}</span>
+                <MapPin className="w-5 h-5 text-pink-500" />
+                <span>OTIMIZAR ROTA</span>
                 </>
               )}
             </button>
           ) : (
             <>
-              <button onClick={() => setIsImportModalOpen(true)} className="flex-1 h-16 bg-slate-100 text-slate-700 rounded-[1.8rem] font-bold flex items-center justify-center gap-2 active:scale-95 transition-all">
+              <button onClick={() => setIsImportModalOpen(true)} className="flex-1 h-14 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all">
                 <Upload className="w-5 h-5" />
                 <span>Importar</span>
               </button>
-              <button onClick={handleOpenNewManual} className="flex-[1.4] h-16 bg-pink-600 text-white rounded-[1.8rem] font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-pink-200">
+              <button onClick={handleOpenNewManual} className="flex-[1.5] h-14 bg-pink-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-pink-200">
                 <Plus className="w-6 h-6" />
                 <span>Novo Cliente</span>
               </button>
@@ -371,33 +413,25 @@ const App: React.FC = () => {
       </div>
 
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-t-[3rem] sm:rounded-[3rem] p-8 shadow-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-20">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-20">
             <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-2xl font-black text-slate-800 tracking-tight">Importar Lista</h2>
-                <p className="text-xs text-slate-400 font-medium">A IA irá organizar os dados para você</p>
-              </div>
-              {!isProcessing && <X className="w-8 h-8 p-2 bg-slate-50 text-slate-400 rounded-full cursor-pointer" onClick={() => setIsImportModalOpen(false)} />}
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Importar</h2>
+              {!isProcessing && <X className="w-6 h-6 text-slate-300 cursor-pointer" onClick={() => setIsImportModalOpen(false)} />}
             </div>
             
             <div className="space-y-6">
-              <div onClick={() => !isProcessing && fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-slate-100 bg-slate-50' : 'border-slate-200 hover:border-pink-500'} rounded-[2.5rem] p-12 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all active:scale-95`}>
+              <div onClick={() => !isProcessing && fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-slate-100 bg-slate-50' : 'border-slate-200 hover:border-pink-500'} rounded-[2rem] p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all active:scale-95`}>
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*,.pdf" onChange={handleFileUpload} disabled={isProcessing} />
-                <div className={`p-5 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
+                <div className={`p-4 rounded-2xl ${isProcessing ? 'bg-slate-200 text-slate-400' : 'bg-pink-100 text-pink-600'}`}>
                   {isProcessing ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
                 </div>
-                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto da Lista ou PDF'}</p>
-              </div>
-
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-                <div className="relative flex justify-center text-[10px] uppercase font-black text-slate-300"><span className="bg-white px-2">ou texto</span></div>
+                <p className="font-bold text-slate-700 text-center">{isProcessing ? importStatus : 'Foto ou PDF da Lista'}</p>
               </div>
 
               <div className="space-y-3">
-                <textarea className="w-full h-28 p-5 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium placeholder:text-slate-300" placeholder="Cole os nomes e endereços aqui..." value={importText} onChange={(e) => setImportText(e.target.value)} disabled={isProcessing} />
-                <button onClick={handleTextImport} disabled={isProcessing || !importText.trim()} className="w-full py-5 bg-slate-900 text-white rounded-[1.5rem] font-black disabled:opacity-30 active:scale-95 transition-all shadow-xl shadow-slate-200">
+                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm resize-none font-medium" placeholder="Ou cole a lista de contatos..." value={importText} onChange={(e) => setImportText(e.target.value)} disabled={isProcessing} />
+                <button onClick={handleTextImport} disabled={isProcessing || !importText.trim()} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black disabled:opacity-30 active:scale-95 transition-all">
                   {isProcessing ? <Loader2 className="w-5 h-5 mx-auto animate-spin" /> : 'PROCESSAR COM IA'}
                 </button>
               </div>
@@ -407,41 +441,37 @@ const App: React.FC = () => {
       )}
 
       {isManualModalOpen && editingCustomer && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[3rem] sm:rounded-[3rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[95vh] animate-in slide-in-from-bottom-20">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <form onSubmit={saveCustomer} className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-6 overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-20">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-black text-slate-800 tracking-tight">{editingCustomer.id ? 'Editar Cliente' : 'Novo Cliente'}</h2>
-              <X className="w-8 h-8 p-2 bg-slate-50 text-slate-400 rounded-full cursor-pointer" onClick={() => setIsManualModalOpen(false)} />
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">{editingCustomer.id ? 'Editar' : 'Novo Cliente'}</h2>
+              <X className="w-6 h-6 text-slate-300 cursor-pointer" onClick={() => setIsManualModalOpen(false)} />
             </div>
             
             <div className="space-y-4 overflow-y-auto pr-1 no-scrollbar pb-6">
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
-                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-bold text-slate-700" value={editingCustomer.name || ''} onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})} />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome</label>
+                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.name || ''} onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})} />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Endereço (Rua e Número)</label>
-                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-bold text-slate-700" value={editingCustomer.address || ''} onChange={e => setEditingCustomer({...editingCustomer, address: e.target.value})} />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Endereço</label>
+                <input required className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.address || ''} onChange={e => setEditingCustomer({...editingCustomer, address: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bairro</label>
-                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-bold text-slate-700" value={editingCustomer.neighborhood || ''} onChange={e => setEditingCustomer({...editingCustomer, neighborhood: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.neighborhood || ''} onChange={e => setEditingCustomer({...editingCustomer, neighborhood: e.target.value})} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp</label>
-                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-bold text-slate-700" value={editingCustomer.phone?.[0] || ''} onChange={e => setEditingCustomer({...editingCustomer, phone: [e.target.value]})} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone</label>
+                  <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-medium" value={editingCustomer.phone?.[0] || ''} onChange={e => setEditingCustomer({...editingCustomer, phone: [e.target.value]})} />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cidade</label>
-                <input className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-bold text-slate-700" value={editingCustomer.city || ''} onChange={e => setEditingCustomer({...editingCustomer, city: e.target.value})} />
               </div>
             </div>
 
-            <button type="submit" className="w-full py-5 bg-pink-600 text-white rounded-[1.8rem] font-black flex items-center justify-center gap-3 active:bg-pink-700 shadow-xl shadow-pink-100 transition-all">
+            <button type="submit" className="w-full py-5 bg-pink-600 text-white rounded-[1.5rem] font-black flex items-center justify-center gap-3 active:bg-pink-700 shadow-xl shadow-pink-100 transition-all">
               <Save className="w-5 h-5" />
-              <span>SALVAR ALTERAÇÕES</span>
+              <span>SALVAR CLIENTE</span>
             </button>
           </form>
         </div>
