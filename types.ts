@@ -1,3 +1,4 @@
+// types.ts
 
 export interface Customer {
   id: string;
@@ -11,8 +12,11 @@ export interface Customer {
   status?: string;
   lastVisit?: string;
   notes?: string;
+
+  // --- Novos campos para a Rota ---
   latitude?: number;
   longitude?: number;
+  // -------------------------------
 }
 
 export interface RouteStop {
