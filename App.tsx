@@ -222,7 +222,7 @@ const App: React.FC = () => {
     });
   };
 
-  // --- NOVA FUNÇÃO DE ROTA INTELIGENTE ---
+  // ✅ FUNÇÃO ATUALIZADA - AGORA É ASYNC
   const handleSmartRoute = async () => {
     if (selectedIds.size === 0) return;
 
@@ -274,7 +274,7 @@ const App: React.FC = () => {
 
       setRouteStatus('Calculando melhor trajeto...');
 
-      // 4. Otimização Matemática da Rota
+      // 4. Obtém localização atual do usuário
       const locationString = await getCurrentLocation();
       let pontoPartida = { lat: -5.79448, lng: -35.211 }; // Padrão: Natal
       
@@ -283,10 +283,11 @@ const App: React.FC = () => {
         pontoPartida = { lat: parseFloat(lat), lng: parseFloat(lng) };
       }
 
-      // Reordena a lista usando o algoritmo de vizinho mais próximo
-      const rotaOtimizada = otimizarRota(pontoPartida, selectedCustomers);
+      // ✅ 5. AGORA USA AWAIT - Otimização com API real
+      setRouteStatus('Otimizando com distâncias reais...');
+      const rotaOtimizada = await otimizarRota(pontoPartida, selectedCustomers);
 
-      // 5. Abre o Google Maps com a rota otimizada
+      // 6. Prepara waypoints para o Google Maps
       const waypoints = rotaOtimizada.map(c => {
         if (c.latitude && c.longitude) {
           return `${c.latitude},${c.longitude}`;
@@ -294,15 +295,20 @@ const App: React.FC = () => {
         return encodeURIComponent(`${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`);
       });
 
-      // Formato padrão do Google Maps: origem/destino1/destino2/...
+      // 7. Abre Google Maps com a rota otimizada
       const origin = locationString || `${pontoPartida.lat},${pontoPartida.lng}`;
       const pathString = waypoints.join('/');
       
+      setRouteStatus('Abrindo Google Maps...');
       window.open(`https://www.google.com/maps/dir/${origin}/${pathString}`, '_blank');
 
+      // ✅ Feedback de sucesso
+      console.log('✅ Rota otimizada com sucesso!');
+      console.log(`📍 Total de paradas: ${rotaOtimizada.length}`);
+
     } catch (error) {
-      console.error(error);
-      alert("Erro ao otimizar rota. Verifique o console.");
+      console.error('❌ Erro ao otimizar rota:', error);
+      alert("Erro ao otimizar rota. Verifique:\n1. Se a API Key do OpenRouteService está configurada\n2. Se os clientes têm endereços válidos\n3. O console para mais detalhes");
     } finally {
       setIsPreparingRoute(false);
       setRouteStatus('');
@@ -381,7 +387,7 @@ const App: React.FC = () => {
         <div className="bg-white border border-slate-100 shadow-2xl rounded-[2rem] p-3 flex items-center gap-3">
           {selectedIds.size > 0 ? (
             <button 
-              onClick={handleSmartRoute} // <--- AQUI ESTÁ A CHAMADA DA NOVA FUNÇÃO
+              onClick={handleSmartRoute}
               disabled={isPreparingRoute}
               className="w-full h-14 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
             >
