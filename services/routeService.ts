@@ -316,6 +316,98 @@ export const otimizarRota = async (
 };
 
 // ====================================
+// ✅✅✅ NOVA FUNÇÃO: Otimizar rota usando API de otimização do OpenRouteService ✅✅✅
+// Esta é a melhor opção - usa o algoritmo nativo da API
+// ====================================
+export const otimizarRotaComAPI = async (
+  pontoPartida: { lat: number, lng: number }, 
+  clientes: Customer[]
+): Promise<Customer[]> => {
+  
+  if (!OPENROUTE_API_KEY) {
+    console.warn('⚠️ API Key não configurada. Usando otimização local...');
+    return otimizarRota(pontoPartida, clientes);
+  }
+
+  const comCoords = clientes.filter(c => c.latitude && c.longitude);
+  const semCoords = clientes.filter(c => !c.latitude || !c.longitude);
+  
+  if (comCoords.length === 0) return clientes;
+  if (comCoords.length === 1) return clientes;
+
+  console.log(`🚗 Otimizando ${comCoords.length} clientes com API OpenRouteService...`);
+
+  try {
+    // Prepara os "jobs" (locais a visitar)
+    const jobs = comCoords.map((cliente, index) => ({
+      id: index + 1,
+      location: [cliente.longitude!, cliente.latitude!],
+      service: 180 // tempo de atendimento em segundos (3min)
+    }));
+
+    // Veículo (você como motorista)
+    const vehicles = [{
+      id: 1,
+      start: [pontoPartida.lng, pontoPartida.lat],
+      end: [pontoPartida.lng, pontoPartida.lat], // Volta ao início
+      capacity: [comCoords.length] // Capacidade para visitar todos
+    }];
+
+    const response = await fetch(`${BASE_URL}/optimization`, {
+      method: 'POST',
+      headers: {
+        'Authorization': OPENROUTE_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        jobs,
+        vehicles,
+        options: {
+          g: false // não precisa de geometria aqui
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`API Optimization retornou ${response.status}: ${errorText}`);
+      console.log('Usando método local como fallback...');
+      return otimizarRota(pontoPartida, clientes);
+    }
+
+    const data = await response.json();
+    
+    if (!data.routes || !data.routes[0]) {
+      throw new Error('Resposta da API inválida');
+    }
+
+    const route = data.routes[0];
+    
+    // Extrai a ordem otimizada
+    const ordemOtimizada = route.steps
+      .filter((step: any) => step.type === 'job')
+      .map((step: any) => comCoords[step.job - 1]); // job IDs começam em 1
+
+    const distanciaTotal = (route.distance / 1000).toFixed(2);
+    const duracaoTotal = (route.duration / 60).toFixed(0);
+
+    console.log(`✅ Rota otimizada pela API!`);
+    console.log(`📏 Distância: ${distanciaTotal}km`);
+    console.log(`⏱️ Duração: ${duracaoTotal}min`);
+    console.log(`📍 Ordem:`, ordemOtimizada.map(c => c.name));
+
+    // Adiciona clientes sem coordenadas no final
+    return [...ordemOtimizada, ...semCoords];
+
+  } catch (error) {
+    console.error('Erro na otimização via API:', error);
+    console.log('Tentando método local...');
+    return otimizarRota(pontoPartida, clientes);
+  }
+};
+
+// ====================================
 // NOVA FUNÇÃO: Obter geometria completa da rota para visualização
 // ====================================
 export const obterGeometriaRota = async (rota: Customer[]): Promise<any> => {
