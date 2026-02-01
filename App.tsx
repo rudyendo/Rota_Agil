@@ -15,9 +15,9 @@ import {
 import { Customer } from './types';
 import { initialCustomers } from './initialData';
 import CustomerCard from './components/CustomerCard';
-// Importamos as novas funções inteligentes aqui
+// ✅ IMPORTAÇÃO ATUALIZADA - Agora importa otimizarRotaComAPI
 import { parseFileToCustomers, parseRawTextToCustomers, getCoordinates } from './services/geminiService';
-import { otimizarRota } from './services/routeService';
+import { otimizarRota, otimizarRotaComAPI } from './services/routeService';
 
 const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -222,7 +222,7 @@ const App: React.FC = () => {
     });
   };
 
-  // ✅ FUNÇÃO ATUALIZADA - AGORA É ASYNC
+  // ✅✅✅ FUNÇÃO COMPLETAMENTE REESCRITA COM TODAS AS CORREÇÕES ✅✅✅
   const handleSmartRoute = async () => {
     if (selectedIds.size === 0) return;
 
@@ -272,8 +272,6 @@ const App: React.FC = () => {
         setCustomers(Array.from(updatedCustomersMap.values()));
       }
 
-      setRouteStatus('Calculando melhor trajeto...');
-
       // 4. Obtém localização atual do usuário
       const locationString = await getCurrentLocation();
       let pontoPartida = { lat: -5.79448, lng: -35.211 }; // Padrão: Natal
@@ -283,32 +281,63 @@ const App: React.FC = () => {
         pontoPartida = { lat: parseFloat(lat), lng: parseFloat(lng) };
       }
 
-      // ✅ 5. AGORA USA AWAIT - Otimização com API real
-      setRouteStatus('Otimizando com distâncias reais...');
-      const rotaOtimizada = await otimizarRota(pontoPartida, selectedCustomers);
+      // ✅ 5. USA A NOVA FUNÇÃO DE OTIMIZAÇÃO COM API (MUDANÇA PRINCIPAL)
+      setRouteStatus('Otimizando com algoritmo inteligente...');
+      const rotaOtimizada = await otimizarRotaComAPI(pontoPartida, selectedCustomers);
 
-      // 6. Prepara waypoints para o Google Maps
-      const waypoints = rotaOtimizada.map(c => {
-        if (c.latitude && c.longitude) {
-          return `${c.latitude},${c.longitude}`;
-        }
-        return encodeURIComponent(`${c.address}, ${c.neighborhood || ''}, ${c.city || ''}`);
+      // 🐛 6. DEBUG: Mostra a ordem no console
+      console.log('========================================');
+      console.log('📍 ORDEM OTIMIZADA DOS CLIENTES:');
+      console.log('========================================');
+      rotaOtimizada.forEach((c, i) => {
+        console.log(`${i + 1}. ${c.name} - ${c.neighborhood || 'S/N'}`);
       });
+      console.log('========================================');
 
-      // 7. Abre Google Maps com a rota otimizada
-      const origin = locationString || `${pontoPartida.lat},${pontoPartida.lng}`;
-      const pathString = waypoints.join('/');
+      // ✅ 7. CORREÇÃO CRÍTICA: Prepara waypoints COM ORDEM FIXA para Google Maps
+      // Google Maps não deve reordenar - a ordem já está otimizada!
       
+      if (rotaOtimizada.length === 0) {
+        alert('Nenhum cliente para roteirizar!');
+        return;
+      }
+
+      // Separa: primeiro destino, waypoints intermediários, último destino
+      const waypoints = rotaOtimizada
+        .slice(0, -1) // Remove o último (será o destination)
+        .map(c => {
+          if (c.latitude && c.longitude) {
+            return `${c.latitude},${c.longitude}`;
+          }
+          return encodeURIComponent(`${c.address}, ${c.neighborhood || ''}, ${c.city || 'Natal'}`);
+        });
+
+      const ultimoCliente = rotaOtimizada[rotaOtimizada.length - 1];
+      const destination = ultimoCliente.latitude && ultimoCliente.longitude
+        ? `${ultimoCliente.latitude},${ultimoCliente.longitude}`
+        : encodeURIComponent(`${ultimoCliente.address}, ${ultimoCliente.neighborhood || ''}, ${ultimoCliente.city || 'Natal'}`);
+
+      // 8. Monta URL do Google Maps SEM permitir reordenação automática
+      const origin = locationString || `${pontoPartida.lat},${pontoPartida.lng}`;
+      
+      // FORMATO CORRETO: api=1 força o uso da API do Google Maps
+      // waypoints com pipe (|) mantém a ordem exata
+      const waypointsParam = waypoints.join('|');
+      const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypointsParam}&travelmode=driving`;
+
+      console.log('🗺️ URL do Google Maps:', mapsUrl);
+
       setRouteStatus('Abrindo Google Maps...');
-      window.open(`https://www.google.com/maps/dir/${origin}/${pathString}`, '_blank');
+      window.open(mapsUrl, '_blank');
 
       // ✅ Feedback de sucesso
       console.log('✅ Rota otimizada com sucesso!');
       console.log(`📍 Total de paradas: ${rotaOtimizada.length}`);
+      console.log(`📍 Ponto de partida: ${pontoPartida.lat}, ${pontoPartida.lng}`);
 
     } catch (error) {
       console.error('❌ Erro ao otimizar rota:', error);
-      alert("Erro ao otimizar rota. Verifique:\n1. Se a API Key do OpenRouteService está configurada\n2. Se os clientes têm endereços válidos\n3. O console para mais detalhes");
+      alert(`Erro ao otimizar rota:\n\n${error instanceof Error ? error.message : 'Erro desconhecido'}\n\nVerifique:\n1. Se a API Key do OpenRouteService está configurada\n2. Se os clientes têm endereços válidos\n3. O console (F12) para mais detalhes`);
     } finally {
       setIsPreparingRoute(false);
       setRouteStatus('');
